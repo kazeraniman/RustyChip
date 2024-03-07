@@ -15,35 +15,35 @@ pub enum Opcode {
     JumpAddr(u16),
     CallAddr(u16),
     SkipRegisterEqualsValue(usize, u8),
-    SkipRegisterNotEqualsValue(u8, u8),
-    SkipRegistersEqual(u8, u8),
-    LoadValue(u8, u8),
-    AddValue(u8, u8),
-    LoadRegisterValue(u8, u8),
-    Or(u8, u8),
-    And(u8, u8),
-    Xor(u8, u8),
-    AddRegisters(u8, u8),
-    SubtractFromFirstRegister(u8, u8),
-    BitShiftRight(u8, u8),
-    SubtractFromSecondRegister(u8, u8),
-    BitShiftLeft(u8, u8),
-    SkipRegistersNotEqual(u8, u8),
+    SkipRegisterNotEqualsValue(usize, u8),
+    SkipRegistersEqual(usize, usize),
+    LoadValue(usize, u8),
+    AddValue(usize, u8),
+    LoadRegisterValue(usize, usize),
+    Or(usize, usize),
+    And(usize, usize),
+    Xor(usize, usize),
+    AddRegisters(usize, usize),
+    SubtractFromFirstRegister(usize, usize),
+    BitShiftRight(usize, usize),
+    SubtractFromSecondRegister(usize, usize),
+    BitShiftLeft(usize, usize),
+    SkipRegistersNotEqual(usize, usize),
     SetRegisterI(u16),
     JumpAddrV0(u16),
-    Random(u8, u8),
-    Draw(u8, u8, u8),
-    SkipKeyPressed(u8),
-    SkipKeyNotPressed(u8),
-    LoadDelayTimer(u8),
-    LoadKeyPress(u8),
-    SetDelayTimer(u8),
-    SetSoundTimer(u8),
-    AddRegisterI(u8),
-    SetIHexSpriteLocation(u8),
-    BinaryCodedDecimal(u8),
-    StoreRegisters(u8),
-    LoadRegisters(u8)
+    Random(usize, u8),
+    Draw(usize, usize, u8),
+    SkipKeyPressed(usize),
+    SkipKeyNotPressed(usize),
+    LoadDelayTimer(usize),
+    LoadKeyPress(usize),
+    SetDelayTimer(usize),
+    SetSoundTimer(usize),
+    AddRegisterI(usize),
+    SetIHexSpriteLocation(usize),
+    BinaryCodedDecimal(usize),
+    StoreRegisters(usize),
+    LoadRegisters(usize)
 }
 
 struct OpcodeBytes {
@@ -62,17 +62,25 @@ impl OpcodeBytes {
         OpcodeBytes {
             first_byte: opcode_bytes[0],
             second_byte: opcode_bytes[1],
-            first_nibble: Self::get_upper_nibble(opcode_bytes[0]),
-            last_nibble: Self::get_lower_nibble(opcode_bytes[1])
+            first_nibble: Self::get_upper_nibble_u8(opcode_bytes[0]),
+            last_nibble: Self::get_lower_nibble_u8(opcode_bytes[1])
         }
     }
 
-    fn get_upper_nibble(byte: u8) -> u8 {
+    fn get_upper_nibble_u8(byte: u8) -> u8 {
         (byte & UPPER_NIBBLE_MASK) >> 4
     }
 
-    fn get_lower_nibble(byte: u8) -> u8 {
+    fn get_lower_nibble_u8(byte: u8) -> u8 {
         byte & LOWER_NIBBLE_MASK
+    }
+    
+    fn get_upper_nibble(byte: u8) -> usize {
+        Self::get_upper_nibble_u8(byte) as usize
+    }
+
+    fn get_lower_nibble(byte: u8) -> usize {
+        Self::get_lower_nibble_u8(byte) as usize
     }
 
     fn get_addr(&self) -> u16 {
@@ -87,7 +95,7 @@ impl OpcodeBytes {
             (0x0, _, _, _) => Opcode::SystemAddr(self.get_addr()),
             (0x1, _, _, _) => Opcode::JumpAddr(self.get_addr()),
             (0x2, _, _, _) => Opcode::CallAddr(self.get_addr()),
-            (0x3, _, _, _) => Opcode::SkipRegisterEqualsValue(OpcodeBytes::get_lower_nibble(self.first_byte) as usize, self.second_byte),
+            (0x3, _, _, _) => Opcode::SkipRegisterEqualsValue(OpcodeBytes::get_lower_nibble(self.first_byte), self.second_byte),
             (0x4, _, _, _) => Opcode::SkipRegisterNotEqualsValue(OpcodeBytes::get_lower_nibble(self.first_byte), self.second_byte),
             (0x5, 0x0, _, _) => Opcode::SkipRegistersEqual(OpcodeBytes::get_lower_nibble(self.first_byte), OpcodeBytes::get_upper_nibble(self.second_byte)),
             (0x6, _, _, _) => Opcode::LoadValue(OpcodeBytes::get_lower_nibble(self.first_byte), self.second_byte),
@@ -105,7 +113,7 @@ impl OpcodeBytes {
             (0xA, _, _, _) => Opcode::SetRegisterI(self.get_addr()),
             (0xB, _, _, _) => Opcode::JumpAddrV0(self.get_addr()),
             (0xC, _, _, _) => Opcode::Random(OpcodeBytes::get_lower_nibble(self.first_byte), self.second_byte),
-            (0xD, _, _, _) => Opcode::Draw(OpcodeBytes::get_lower_nibble(self.first_byte), OpcodeBytes::get_upper_nibble(self.second_byte), OpcodeBytes::get_lower_nibble(self.second_byte)),
+            (0xD, _, _, _) => Opcode::Draw(OpcodeBytes::get_lower_nibble(self.first_byte), OpcodeBytes::get_upper_nibble(self.second_byte), OpcodeBytes::get_lower_nibble_u8(self.second_byte)),
             (0xE, _, _, 0x9E) => Opcode::SkipKeyPressed(OpcodeBytes::get_lower_nibble(self.first_byte)),
             (0xE, _, _, 0xA1) => Opcode::SkipKeyNotPressed(OpcodeBytes::get_lower_nibble(self.first_byte)),
             (0xF, _, _, 0x07) => Opcode::LoadDelayTimer(OpcodeBytes::get_lower_nibble(self.first_byte)),

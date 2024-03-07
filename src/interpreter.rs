@@ -24,7 +24,7 @@ impl Interpreter {
             stack_pointer: 0,
         }
     }
-    
+
     fn handle_opcode(&mut self, opcode: Opcode) {
         match opcode {
             Opcode::SystemAddr(_) => {}
@@ -33,8 +33,8 @@ impl Interpreter {
             Opcode::JumpAddr(address) => self.jump_addr(address),
             Opcode::CallAddr(_) => {}
             Opcode::SkipRegisterEqualsValue(register, value) => self.skip_register_equals_value(register, value),
-            Opcode::SkipRegisterNotEqualsValue(_, _) => {}
-            Opcode::SkipRegistersEqual(_, _) => {}
+            Opcode::SkipRegisterNotEqualsValue(register, value) => self.skip_register_not_equals_value(register, value),
+            Opcode::SkipRegistersEqual(first_register, second_register) => self.skip_registers_equal(first_register, second_register),
             Opcode::LoadValue(_, _) => {}
             Opcode::AddValue(_, _) => {}
             Opcode::LoadRegisterValue(_, _) => {}
@@ -46,7 +46,7 @@ impl Interpreter {
             Opcode::BitShiftRight(_, _) => {}
             Opcode::SubtractFromSecondRegister(_, _) => {}
             Opcode::BitShiftLeft(_, _) => {}
-            Opcode::SkipRegistersNotEqual(_, _) => {}
+            Opcode::SkipRegistersNotEqual(first_register, second_register) => self.skip_registers_not_equal(first_register, second_register),
             Opcode::SetRegisterI(_) => {}
             Opcode::JumpAddrV0(_) => {}
             Opcode::Random(_, _) => {}
@@ -64,13 +64,31 @@ impl Interpreter {
             Opcode::LoadRegisters(_) => {}
         }
     }
-    
+
     fn jump_addr(&mut self, address: u16) {
         self.program_counter = address;
     }
-    
+
     fn skip_register_equals_value(&mut self, register: usize, value: u8) {
         if self.registers[register] == value {
+            self.program_counter += 2;
+        }
+    }
+
+    fn skip_register_not_equals_value(&mut self, register: usize, value: u8) {
+        if self.registers[register] != value {
+            self.program_counter += 2;
+        }
+    }
+
+    fn skip_registers_equal(&mut self, first_register: usize, second_register: usize) {
+        if self.registers[first_register] == self.registers[second_register] {
+            self.program_counter += 2;
+        }
+    }
+    
+    fn skip_registers_not_equal(&mut self, first_register: usize, second_register: usize) {
+        if self.registers[first_register] != self.registers[second_register] {
             self.program_counter += 2;
         }
     }
@@ -79,7 +97,7 @@ impl Interpreter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn create_interpreter() {
         let interpreter = Interpreter::new();
@@ -89,7 +107,7 @@ mod tests {
         assert_eq!(interpreter.sound_timer, 0);
         assert_eq!(interpreter.program_counter, 0);
         assert_eq!(interpreter.stack_pointer, 0);
-        
+
         for byte in interpreter.ram.iter() {
             assert_eq!(byte, &0);
         }
@@ -98,17 +116,17 @@ mod tests {
             assert_eq!(byte, &0);
         }
     }
-    
+
     #[test]
     fn handle_jump_addr_opcode() {
         let mut interpreter = Interpreter::new();
-        
+
         interpreter.handle_opcode(Opcode::JumpAddr(0x381));
         assert_eq!(interpreter.program_counter, 0x381);
     }
 
     #[test]
-    fn handle_skip_registers_equal_opcode() {
+    fn handle_skip_register_equals_value_opcode() {
         let mut interpreter = Interpreter::new();
 
         interpreter.handle_opcode(Opcode::SkipRegisterEqualsValue(0x5, 0xA2));
@@ -116,6 +134,47 @@ mod tests {
 
         interpreter.registers[0x5] = 0xA2;
         interpreter.handle_opcode(Opcode::SkipRegisterEqualsValue(0x5, 0xA2));
+        assert_eq!(interpreter.program_counter, 0x2);
+    }
+
+    #[test]
+    fn handle_skip_register_not_equals_value_opcode() {
+        let mut interpreter = Interpreter::new();
+
+        interpreter.registers[0xA] = 0x23;
+        interpreter.handle_opcode(Opcode::SkipRegisterNotEqualsValue(0xA, 0x23));
+        assert_eq!(interpreter.program_counter, 0x0);
+
+        interpreter.registers[0xA] = 0x24;
+        interpreter.handle_opcode(Opcode::SkipRegisterNotEqualsValue(0xA, 0x23));
+        assert_eq!(interpreter.program_counter, 0x2);
+    }
+
+    #[test]
+    fn handle_skip_registers_equal_opcode() {
+        let mut interpreter = Interpreter::new();
+
+        interpreter.registers[0x1] = 0x4;
+        interpreter.registers[0x2] = 0x5;
+        interpreter.handle_opcode(Opcode::SkipRegistersEqual(0x1, 0x2));
+        assert_eq!(interpreter.program_counter, 0x0);
+
+        interpreter.registers[0x1] = 0x5;
+        interpreter.handle_opcode(Opcode::SkipRegistersEqual(0x1, 0x2));
+        assert_eq!(interpreter.program_counter, 0x2);
+    }
+
+    #[test]
+    fn handle_skip_registers_not_equal_opcode() {
+        let mut interpreter = Interpreter::new();
+
+        interpreter.registers[0x1] = 0x4;
+        interpreter.registers[0x2] = 0x4;
+        interpreter.handle_opcode(Opcode::SkipRegistersNotEqual(0x1, 0x2));
+        assert_eq!(interpreter.program_counter, 0x0);
+
+        interpreter.registers[0x1] = 0x5;
+        interpreter.handle_opcode(Opcode::SkipRegistersNotEqual(0x1, 0x2));
         assert_eq!(interpreter.program_counter, 0x2);
     }
 }

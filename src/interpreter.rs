@@ -1,3 +1,4 @@
+use rand::random;
 use crate::opcodes::Opcode;
 
 const BYTE_MASK: u16 = 0xFF;
@@ -51,7 +52,7 @@ impl Interpreter {
             Opcode::SkipRegistersNotEqual(first_register, second_register) => self.skip_registers_not_equal(first_register, second_register),
             Opcode::SetRegisterI(_) => {}
             Opcode::JumpAddrV0(_) => {}
-            Opcode::Random(_, _) => {}
+            Opcode::Random(register, value) => self.random(register, value),
             Opcode::Draw(_, _, _) => {}
             Opcode::SkipKeyPressed(_) => {}
             Opcode::SkipKeyNotPressed(_) => {}
@@ -117,6 +118,11 @@ impl Interpreter {
 
     fn xor(&mut self, first_register: usize, second_register: usize) {
         self.registers[first_register] ^= self.registers[second_register];
+    }
+
+    fn random(&mut self, register: usize, value: u8) {
+        let random_byte: u8 = random();
+        self.registers[register] = random_byte & value;
     }
 }
 
@@ -277,5 +283,13 @@ mod tests {
         interpreter.handle_opcode(Opcode::Xor(0xB, 0xF));
         assert_eq!(interpreter.registers[0xB], 0x66, "Bitwise XOR not applied correctly.");
         assert_eq!(interpreter.registers[0xF], 0x55, "Second register value modified.");
+    }
+
+    #[test]
+    fn handle_random_opcode() {
+        let mut interpreter = Interpreter::new();
+
+        // Since the result is random, we basically just check to make sure that it doesn't panic
+        interpreter.handle_opcode(Opcode::Random(0x9, 0x53));
     }
 }

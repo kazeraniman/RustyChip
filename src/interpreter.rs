@@ -63,8 +63,8 @@ impl Interpreter {
             Opcode::AddRegisterI(_) => {}
             Opcode::SetIHexSpriteLocation(_) => {}
             Opcode::BinaryCodedDecimal(_) => {}
-            Opcode::StoreRegisters(_) => {}
-            Opcode::LoadRegisters(_) => {}
+            Opcode::StoreRegisters(register) => self.store_registers(register),
+            Opcode::LoadRegisters(register) => self.load_registers(register)
         }
     }
 
@@ -123,6 +123,20 @@ impl Interpreter {
     fn random(&mut self, register: usize, value: u8) {
         let random_byte: u8 = random();
         self.registers[register] = random_byte & value;
+    }
+
+    fn store_registers(&mut self, register: usize) {
+        let start_address = self.register_i as usize;
+        for i in 0..=register {
+            self.ram[start_address + i] = self.registers[i];
+        }
+    }
+
+    fn load_registers(&mut self, register: usize) {
+        let start_address = self.register_i as usize;
+        for i in 0..=register {
+            self.registers[i] = self.ram[start_address + i];
+        }
     }
 }
 
@@ -291,5 +305,60 @@ mod tests {
 
         // Since the result is random, we basically just check to make sure that it doesn't panic
         interpreter.handle_opcode(Opcode::Random(0x9, 0x53));
+    }
+
+    #[test]
+    fn store_registers() {
+        let mut interpreter = Interpreter::new();
+
+        let register_values = &[0x32, 0xBC, 0x12, 0xFF, 0x74];
+        let register = 0x4;
+        let starting_address = 0x834;
+        let starting_address_usize = starting_address as usize;
+        interpreter.register_i = starting_address;
+        for i in 0..=register {
+            interpreter.registers[i] = register_values[i];
+        }
+
+        interpreter.handle_opcode(Opcode::StoreRegisters(register));
+
+        assert_eq!(interpreter.ram[starting_address_usize - 0x1], 0x0, "Ram location before starting address modified.");
+        assert_eq!(interpreter.ram[starting_address_usize + register + 0x1], 0x0, "Ram location past modification area modified.");
+        assert_eq!(interpreter.register_i, starting_address, "Register I value modified.");
+
+        for i in 0..=register {
+            assert_eq!(interpreter.ram[starting_address_usize + i], register_values[i], "Register value not stored.");
+        }
+
+        for i in 0..=register {
+            assert_eq!(interpreter.registers[i], register_values[i], "Register value modified.");
+        }
+    }
+
+    #[test]
+    fn load_registers() {
+        let mut interpreter = Interpreter::new();
+
+        let ram_values = &[0x32, 0xBC, 0x12, 0xFF, 0x74, 0x92, 0x11, 0xF0];
+        let register = 0x7;
+        let starting_address = 0x900;
+        let starting_address_usize = starting_address as usize;
+        interpreter.register_i = starting_address;
+        for i in 0..=register {
+            interpreter.ram[starting_address_usize + i] = ram_values[i];
+        }
+
+        interpreter.handle_opcode(Opcode::LoadRegisters(register));
+
+        assert_eq!(interpreter.registers[register + 0x1], 0x0, "Register after modification area modified.");
+        assert_eq!(interpreter.register_i, starting_address, "Register I value modified.");
+
+        for i in 0..=register {
+            assert_eq!(interpreter.registers[i], ram_values[i], "Register value not loaded.");
+        }
+        
+        for i in 0..=register {
+            assert_eq!(interpreter.ram[starting_address_usize + i], ram_values[i], "Ram value modified.");
+        }
     }
 }

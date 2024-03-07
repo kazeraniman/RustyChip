@@ -74,7 +74,7 @@ impl OpcodeBytes {
     fn get_lower_nibble_u8(byte: u8) -> u8 {
         byte & LOWER_NIBBLE_MASK
     }
-    
+
     fn get_upper_nibble(byte: u8) -> usize {
         Self::get_upper_nibble_u8(byte) as usize
     }

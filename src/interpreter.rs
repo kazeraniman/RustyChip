@@ -1,5 +1,7 @@
 use crate::opcodes::Opcode;
 
+const BYTE_MASK: u16 = 0xFF;
+
 struct Interpreter {
     ram: [u8; 4096],
     registers: [u8; 16],
@@ -35,12 +37,12 @@ impl Interpreter {
             Opcode::SkipRegisterEqualsValue(register, value) => self.skip_register_equals_value(register, value),
             Opcode::SkipRegisterNotEqualsValue(register, value) => self.skip_register_not_equals_value(register, value),
             Opcode::SkipRegistersEqual(first_register, second_register) => self.skip_registers_equal(first_register, second_register),
-            Opcode::LoadValue(_, _) => {}
-            Opcode::AddValue(_, _) => {}
-            Opcode::LoadRegisterValue(_, _) => {}
-            Opcode::Or(_, _) => {}
-            Opcode::And(_, _) => {}
-            Opcode::Xor(_, _) => {}
+            Opcode::LoadValue(register, value) => self.load_value(register, value),
+            Opcode::AddValue(register, value) => self.add_value(register, value),
+            Opcode::LoadRegisterValue(first_register, second_register) => self.load_register_value(first_register, second_register),
+            Opcode::Or(first_register, second_register) => self.or(first_register, second_register),
+            Opcode::And(first_register, second_register) => self.and(first_register, second_register),
+            Opcode::Xor(first_register, second_register) => self.xor(first_register, second_register),
             Opcode::AddRegisters(_, _) => {}
             Opcode::SubtractFromFirstRegister(_, _) => {}
             Opcode::BitShiftRight(_, _) => {}
@@ -86,11 +88,35 @@ impl Interpreter {
             self.program_counter += 2;
         }
     }
-    
+
     fn skip_registers_not_equal(&mut self, first_register: usize, second_register: usize) {
         if self.registers[first_register] != self.registers[second_register] {
             self.program_counter += 2;
         }
+    }
+
+    fn load_value(&mut self, register: usize, value: u8) {
+        self.registers[register] = value;
+    }
+
+    fn add_value(&mut self, register: usize, value: u8) {
+        self.registers[register] = ((self.registers[register] as u16 + value as u16) & BYTE_MASK) as u8;
+    }
+
+    fn load_register_value(&mut self, first_register: usize, second_register: usize) {
+        self.registers[first_register] = self.registers[second_register];
+    }
+
+    fn or(&mut self, first_register: usize, second_register: usize) {
+        self.registers[first_register] |= self.registers[second_register];
+    }
+
+    fn and(&mut self, first_register: usize, second_register: usize) {
+        self.registers[first_register] &= self.registers[second_register];
+    }
+
+    fn xor(&mut self, first_register: usize, second_register: usize) {
+        self.registers[first_register] ^= self.registers[second_register];
     }
 }
 
@@ -122,7 +148,7 @@ mod tests {
         let mut interpreter = Interpreter::new();
 
         interpreter.handle_opcode(Opcode::JumpAddr(0x381));
-        assert_eq!(interpreter.program_counter, 0x381);
+        assert_eq!(interpreter.program_counter, 0x381, "Program counter not updated.");
     }
 
     #[test]
@@ -130,11 +156,13 @@ mod tests {
         let mut interpreter = Interpreter::new();
 
         interpreter.handle_opcode(Opcode::SkipRegisterEqualsValue(0x5, 0xA2));
-        assert_eq!(interpreter.program_counter, 0x0);
+        assert_eq!(interpreter.program_counter, 0x0, "Program counter updated when register value doesn't match.");
+        assert_eq!(interpreter.registers[0x5], 0x0, "Register value modified.");
 
         interpreter.registers[0x5] = 0xA2;
         interpreter.handle_opcode(Opcode::SkipRegisterEqualsValue(0x5, 0xA2));
-        assert_eq!(interpreter.program_counter, 0x2);
+        assert_eq!(interpreter.program_counter, 0x2, "Program counter not updated when register value matches.");
+        assert_eq!(interpreter.registers[0x5], 0xA2, "Register value modified.");
     }
 
     #[test]
@@ -143,11 +171,13 @@ mod tests {
 
         interpreter.registers[0xA] = 0x23;
         interpreter.handle_opcode(Opcode::SkipRegisterNotEqualsValue(0xA, 0x23));
-        assert_eq!(interpreter.program_counter, 0x0);
+        assert_eq!(interpreter.program_counter, 0x0, "Program counter updated when register value matches.");
+        assert_eq!(interpreter.registers[0xA], 0x23, "Register value modified.");
 
         interpreter.registers[0xA] = 0x24;
         interpreter.handle_opcode(Opcode::SkipRegisterNotEqualsValue(0xA, 0x23));
-        assert_eq!(interpreter.program_counter, 0x2);
+        assert_eq!(interpreter.program_counter, 0x2, "Program counter not updated when register value doesn't match.");
+        assert_eq!(interpreter.registers[0xA], 0x24, "Register value modified.");
     }
 
     #[test]
@@ -157,11 +187,15 @@ mod tests {
         interpreter.registers[0x1] = 0x4;
         interpreter.registers[0x2] = 0x5;
         interpreter.handle_opcode(Opcode::SkipRegistersEqual(0x1, 0x2));
-        assert_eq!(interpreter.program_counter, 0x0);
+        assert_eq!(interpreter.program_counter, 0x0, "Program counter updated when registers don't match.");
+        assert_eq!(interpreter.registers[0x1], 0x4, "First register value modified.");
+        assert_eq!(interpreter.registers[0x2], 0x5, "Second register value modified.");
 
         interpreter.registers[0x1] = 0x5;
         interpreter.handle_opcode(Opcode::SkipRegistersEqual(0x1, 0x2));
-        assert_eq!(interpreter.program_counter, 0x2);
+        assert_eq!(interpreter.program_counter, 0x2, "Program counter not updated when registers match.");
+        assert_eq!(interpreter.registers[0x1], 0x5, "First register value modified.");
+        assert_eq!(interpreter.registers[0x2], 0x5, "Second register value modified.");
     }
 
     #[test]
@@ -171,10 +205,77 @@ mod tests {
         interpreter.registers[0x1] = 0x4;
         interpreter.registers[0x2] = 0x4;
         interpreter.handle_opcode(Opcode::SkipRegistersNotEqual(0x1, 0x2));
-        assert_eq!(interpreter.program_counter, 0x0);
+        assert_eq!(interpreter.program_counter, 0x0, "Program counter updated when registers match.");
+        assert_eq!(interpreter.registers[0x1], 0x4, "First register value modified.");
+        assert_eq!(interpreter.registers[0x2], 0x4, "Second register value modified.");
 
         interpreter.registers[0x1] = 0x5;
         interpreter.handle_opcode(Opcode::SkipRegistersNotEqual(0x1, 0x2));
-        assert_eq!(interpreter.program_counter, 0x2);
+        assert_eq!(interpreter.program_counter, 0x2, "Program counter not updated when registers don't match.");
+        assert_eq!(interpreter.registers[0x1], 0x5, "First register value modified.");
+        assert_eq!(interpreter.registers[0x2], 0x4, "Second register value modified.");
+    }
+
+    #[test]
+    fn handle_load_value_opcode() {
+        let mut interpreter = Interpreter::new();
+
+        interpreter.handle_opcode(Opcode::LoadValue(0x0, 0x58));
+        assert_eq!(interpreter.registers[0x0], 0x58, "Value not loaded into register.");
+    }
+
+    #[test]
+    fn handle_add_value_opcode() {
+        let mut interpreter = Interpreter::new();
+
+        interpreter.registers[0x6] = 0xAB;
+        interpreter.handle_opcode(Opcode::AddValue(0x6, 0x11));
+        assert_eq!(interpreter.registers[0x6], 0xBC, "Regular addition failed.");
+
+        interpreter.handle_opcode(Opcode::AddValue(0x6, 0xAA));
+        assert_eq!(interpreter.registers[0x6], 0x66, "Overflow not handled. Should truncate.");
+    }
+
+    #[test]
+    fn handle_load_register_value_opcode() {
+        let mut interpreter = Interpreter::new();
+
+        interpreter.registers[0x1] = 0xDD;
+        interpreter.handle_opcode(Opcode::LoadRegisterValue(0x0, 0x1));
+        assert_eq!(interpreter.registers[0x0], 0xDD, "Value not loaded into register.");
+        assert_eq!(interpreter.registers[0x1], 0xDD, "Original register value modified.");
+    }
+
+    #[test]
+    fn handle_or_opcode() {
+        let mut interpreter = Interpreter::new();
+
+        interpreter.registers[0x2] = 0xCC;
+        interpreter.registers[0x4] = 0xC3;
+        interpreter.handle_opcode(Opcode::Or(0x2, 0x4));
+        assert_eq!(interpreter.registers[0x2], 0xCF, "Bitwise OR not applied correctly.");
+        assert_eq!(interpreter.registers[0x4], 0xC3, "Second register value modified.");
+    }
+
+    #[test]
+    fn handle_and_opcode() {
+        let mut interpreter = Interpreter::new();
+
+        interpreter.registers[0x6] = 0xAA;
+        interpreter.registers[0x3] = 0xCC;
+        interpreter.handle_opcode(Opcode::And(0x6, 0x3));
+        assert_eq!(interpreter.registers[0x6], 0x88, "Bitwise AND not applied correctly.");
+        assert_eq!(interpreter.registers[0x3], 0xCC, "Second register value modified.");
+    }
+
+    #[test]
+    fn handle_xor_opcode() {
+        let mut interpreter = Interpreter::new();
+
+        interpreter.registers[0xB] = 0x33;
+        interpreter.registers[0xF] = 0x55;
+        interpreter.handle_opcode(Opcode::Xor(0xB, 0xF));
+        assert_eq!(interpreter.registers[0xB], 0x66, "Bitwise XOR not applied correctly.");
+        assert_eq!(interpreter.registers[0xF], 0x55, "Second register value modified.");
     }
 }

@@ -1,6 +1,7 @@
 use std::{io, fs};
 
 pub mod opcodes;
+pub mod interpreter;
 
 pub fn read_game_file(path: &str) -> io::Result<Vec<u8>> {
     fs::read(path)

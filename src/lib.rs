@@ -1,15 +1,16 @@
 use std::{io, fs, time::Duration};
 use sdl2::{pixels::Color, event::Event, keyboard::Keycode};
+use interpreter::Interpreter;
 
 pub mod opcodes;
 pub mod interpreter;
 
 pub fn run() -> Result<(), String> {
+    // Create the emulator and load the game
     let game_file = read_game_file("games/INVADERS.chip8")
         .map_err(|err| err.to_string())?;
-    for w in game_file.windows(2) {
-        println!("{:0>2X?}{:0>2X?}", w[0], w[1]);
-    }
+    let mut interpreter = Interpreter::new();
+    interpreter.load_game(game_file);
 
     // Initialize SDL
     let sdl_context = sdl2::init()?;
@@ -39,13 +40,14 @@ pub fn run() -> Result<(), String> {
             match event {
                 Event::Quit { .. } |
                 Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
-                    break 'game_loop
+                    break 'game_loop;
                 },
                 _ => {}
             }
         }
 
         // Run the interpreter logic
+        interpreter.handle_cycle();
 
         // Wait the requisite time for the next iteration. Effectively sets it to 60fps / 60Hz.
         std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));

@@ -46,7 +46,7 @@ pub enum Opcode {
     LoadRegisters(usize)
 }
 
-struct OpcodeBytes {
+pub struct OpcodeBytes {
     first_byte: u8,
     second_byte: u8,
     first_nibble: u8,
@@ -54,7 +54,7 @@ struct OpcodeBytes {
 }
 
 impl OpcodeBytes {
-    fn build(opcode_bytes: &[u8]) -> OpcodeBytes {
+    pub fn build(opcode_bytes: &[u8]) -> OpcodeBytes {
         if opcode_bytes.len() != 2 {
             panic!("Improper opcode format: Opcodes must be two bytes.");
         }

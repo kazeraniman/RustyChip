@@ -5,6 +5,24 @@ const PROGRAM_COUNTER_INCREMENT: u16 = 0x2;
 const BYTE_MASK: u16 = u8::MAX as u16;
 const LEAST_SIGNIFICANT_BIT_MASK: u8 = 0x1;
 const MOST_SIGNIFICANT_BIT_MASK: u8 = 0x80;
+const HEXADECIMAL_DIGIT_SPRITES: [u8; 80] = [
+    0xF0, 0x90, 0x90, 0x90, 0xF0,
+    0x20, 0x60, 0x20, 0x20, 0x70,
+    0xF0, 0x10, 0xF0, 0x80, 0xF0,
+    0xF0, 0x10, 0xF0, 0x10, 0xF0,
+    0x90, 0x90, 0xF0, 0x10, 0x10,
+    0xF0, 0x80, 0xF0, 0x10, 0xF0,
+    0xF0, 0x80, 0xF0, 0x90, 0xF0,
+    0xF0, 0x10, 0x20, 0x40, 0x40,
+    0xF0, 0x90, 0xF0, 0x90, 0xF0,
+    0xF0, 0x90, 0xF0, 0x10, 0xF0,
+    0xF0, 0x90, 0xF0, 0x90, 0x90,
+    0xE0, 0x90, 0xE0, 0x90, 0xE0,
+    0xF0, 0x80, 0x80, 0x80, 0xF0,
+    0xE0, 0x90, 0x90, 0x90, 0xE0,
+    0xF0, 0x80, 0xF0, 0x80, 0xF0,
+    0xF0, 0x80, 0xF0, 0x80, 0x80
+];
 
 struct Interpreter {
     ram: [u8; 4096],
@@ -20,8 +38,13 @@ struct Interpreter {
 
 impl Interpreter {
     fn new() -> Interpreter {
+        let mut ram = [0; 4096];
+        for i in 0..HEXADECIMAL_DIGIT_SPRITES.len() {
+            ram[i] = HEXADECIMAL_DIGIT_SPRITES[i];
+        }
+
         Interpreter {
-            ram: [0; 4096],
+            ram,
             registers: [0; 16],
             register_i: 0,
             register_f: false,
@@ -65,7 +88,7 @@ impl Interpreter {
             Opcode::SetDelayTimer(register) => self.set_delay_timer(register),
             Opcode::SetSoundTimer(register) => self.set_sound_timer(register),
             Opcode::AddRegisterI(register) => self.add_register_i(register),
-            Opcode::SetIHexSpriteLocation(_) => {}
+            Opcode::SetIHexSpriteLocation(register) => self.set_register_i_hex_sprite_location(register),
             Opcode::BinaryCodedDecimal(register) => self.binary_coded_decimal(register),
             Opcode::StoreRegisters(register) => self.store_registers(register),
             Opcode::LoadRegisters(register) => self.load_registers(register)
@@ -209,6 +232,10 @@ impl Interpreter {
         self.program_counter = self.stack[self.stack_pointer - 1];
         self.stack_pointer -= 1;
     }
+
+    fn set_register_i_hex_sprite_location(&mut self, register: usize) {
+        self.register_i = (self.registers[register] as u16) * 0x5;
+    }
 }
 
 #[cfg(test)]
@@ -225,8 +252,9 @@ mod tests {
         assert_eq!(interpreter.program_counter, 0);
         assert_eq!(interpreter.stack_pointer, 0);
 
-        for byte in interpreter.ram.iter() {
-            assert_eq!(byte, &0);
+        let hex_digit_sprite_length = HEXADECIMAL_DIGIT_SPRITES.len();
+        for (i, byte) in interpreter.ram.iter().enumerate() {
+            assert_eq!(byte, if i < hex_digit_sprite_length { &HEXADECIMAL_DIGIT_SPRITES[i] } else { &0 });
         }
 
         for byte in interpreter.registers.iter() {
@@ -699,5 +727,17 @@ mod tests {
         assert_eq!(interpreter.stack_pointer, 0x0, "Stack pointer not decremented.");
         assert_eq!(interpreter.stack[interpreter.stack_pointer + 1], top_address, "Top address on the stack modified.");
         assert_eq!(interpreter.stack[interpreter.stack_pointer], bottom_address, "Bottom address on the stack modified.");
+    }
+
+    #[test]
+    fn handle_set_register_i_hex_sprite_location_opcode() {
+        let mut interpreter = Interpreter::new();
+
+        let register = 0x3;
+        let value = 0xE;
+        interpreter.registers[register] = value;
+        interpreter.handle_opcode(Opcode::SetIHexSpriteLocation(register));
+        assert_eq!(interpreter.register_i, 0x46, "Register I not set correctly.");
+        assert_eq!(interpreter.registers[register], value, "Register value modified.");
     }
 }

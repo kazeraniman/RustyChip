@@ -7,7 +7,7 @@ struct Interpreter {
     ram: [u8; 4096],
     registers: [u8; 16],
     register_i: u16,
-    register_f: u8, // TODO: Confirm the size
+    register_f: bool,
     delay_timer: u8,
     sound_timer: u8,
     program_counter: u16,
@@ -20,7 +20,7 @@ impl Interpreter {
             ram: [0; 4096],
             registers: [0; 16],
             register_i: 0,
-            register_f: 0,
+            register_f: false,
             delay_timer: 0,
             sound_timer: 0,
             program_counter: 0,
@@ -50,17 +50,17 @@ impl Interpreter {
             Opcode::SubtractFromSecondRegister(_, _) => {}
             Opcode::BitShiftLeft(_, _) => {}
             Opcode::SkipRegistersNotEqual(first_register, second_register) => self.skip_registers_not_equal(first_register, second_register),
-            Opcode::SetRegisterI(_) => {}
-            Opcode::JumpAddrV0(_) => {}
+            Opcode::LoadRegisterI(address) => self.load_register_i(address),
+            Opcode::JumpAddrV0(address) => self.jump_address_v0(address),
             Opcode::Random(register, value) => self.random(register, value),
             Opcode::Draw(_, _, _) => {}
             Opcode::SkipKeyPressed(_) => {}
             Opcode::SkipKeyNotPressed(_) => {}
-            Opcode::LoadDelayTimer(_) => {}
+            Opcode::LoadDelayTimer(register) => self.load_delay_timer(register),
             Opcode::LoadKeyPress(_) => {}
-            Opcode::SetDelayTimer(_) => {}
-            Opcode::SetSoundTimer(_) => {}
-            Opcode::AddRegisterI(_) => {}
+            Opcode::SetDelayTimer(register) => self.set_delay_timer(register),
+            Opcode::SetSoundTimer(register) => self.set_sound_timer(register),
+            Opcode::AddRegisterI(register) => self.add_register_i(register),
             Opcode::SetIHexSpriteLocation(_) => {}
             Opcode::BinaryCodedDecimal(_) => {}
             Opcode::StoreRegisters(register) => self.store_registers(register),
@@ -138,6 +138,30 @@ impl Interpreter {
             self.registers[i] = self.ram[start_address + i];
         }
     }
+
+    fn load_register_i(&mut self, address: u16) {
+        self.register_i = address;
+    }
+
+    fn jump_address_v0(&mut self, address: u16) {
+        self.jump_addr(address + self.registers[0] as u16);
+    }
+
+    fn load_delay_timer(&mut self, register: usize) {
+        self.registers[register] = self.delay_timer;
+    }
+
+    fn set_delay_timer(&mut self, register: usize) {
+        self.delay_timer = self.registers[register];
+    }
+
+    fn set_sound_timer(&mut self, register: usize) {
+        self.sound_timer = self.registers[register];
+    }
+
+    fn add_register_i(&mut self, register: usize) {
+        self.register_i += self.registers[register] as u16;
+    }
 }
 
 #[cfg(test)]
@@ -148,7 +172,7 @@ mod tests {
     fn create_interpreter() {
         let interpreter = Interpreter::new();
         assert_eq!(interpreter.register_i, 0);
-        assert_eq!(interpreter.register_f, 0);
+        assert_eq!(interpreter.register_f, false);
         assert_eq!(interpreter.delay_timer, 0);
         assert_eq!(interpreter.sound_timer, 0);
         assert_eq!(interpreter.program_counter, 0);
@@ -356,9 +380,77 @@ mod tests {
         for i in 0..=register {
             assert_eq!(interpreter.registers[i], ram_values[i], "Register value not loaded.");
         }
-        
+
         for i in 0..=register {
             assert_eq!(interpreter.ram[starting_address_usize + i], ram_values[i], "Ram value modified.");
         }
+    }
+
+    #[test]
+    fn load_register_i() {
+        let mut interpreter = Interpreter::new();
+
+        interpreter.handle_opcode(Opcode::LoadRegisterI(0x246));
+        assert_eq!(interpreter.register_i, 0x246, "Register I not updated.");
+    }
+
+    #[test]
+    fn jump_address_v0() {
+        let mut interpreter = Interpreter::new();
+
+        interpreter.registers[0] = 0x34;
+        interpreter.handle_opcode(Opcode::JumpAddrV0(0x111));
+        assert_eq!(interpreter.program_counter, 0x145, "Program counter not updated.");
+        assert_eq!(interpreter.registers[0], 0x34, "Register 0 modified.");
+    }
+
+    #[test]
+    fn load_delay_timer() {
+        let mut interpreter = Interpreter::new();
+
+        let value = 0x54;
+        let register = 0x6;
+        interpreter.delay_timer = value;
+        interpreter.handle_opcode(Opcode::LoadDelayTimer(register));
+        assert_eq!(interpreter.registers[register], value, "Register not updated.");
+        assert_eq!(interpreter.delay_timer, value, "Delay timer modified.");
+    }
+
+    #[test]
+    fn set_delay_timer() {
+        let mut interpreter = Interpreter::new();
+
+        let value = 0x20;
+        let register = 0x9;
+        interpreter.registers[register] = value;
+        interpreter.handle_opcode(Opcode::SetDelayTimer(register));
+        assert_eq!(interpreter.delay_timer, value, "Delay timer not updated.");
+        assert_eq!(interpreter.registers[register], value, "Register modified.");
+    }
+
+    #[test]
+    fn set_sound_timer() {
+        let mut interpreter = Interpreter::new();
+
+        let value = 0x77;
+        let register = 0x4;
+        interpreter.registers[register] = value;
+        interpreter.handle_opcode(Opcode::SetSoundTimer(register));
+        assert_eq!(interpreter.sound_timer, value, "Sound timer not updated.");
+        assert_eq!(interpreter.registers[register], value, "Register modified.");
+    }
+
+    #[test]
+    fn add_register_i() {
+        let mut interpreter = Interpreter::new();
+
+        let value = 0x52;
+        let starting_address: u16 = 0x894;
+        let register = 0x7;
+        interpreter.register_i = starting_address;
+        interpreter.registers[register] = value;
+        interpreter.handle_opcode(Opcode::AddRegisterI(register));
+        assert_eq!(interpreter.register_i, starting_address + value as u16, "Register I not updated.");
+        assert_eq!(interpreter.registers[register], value, "Register modified.");
     }
 }

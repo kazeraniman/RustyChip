@@ -29,7 +29,7 @@ pub enum Opcode {
     SubtractFromSecondRegister(usize, usize),
     BitShiftLeft(usize, usize),
     SkipRegistersNotEqual(usize, usize),
-    SetRegisterI(u16),
+    LoadRegisterI(u16),
     JumpAddrV0(u16),
     Random(usize, u8),
     Draw(usize, usize, u8),
@@ -110,7 +110,7 @@ impl OpcodeBytes {
             (0x8, 0x7, _, _) => Opcode::SubtractFromSecondRegister(OpcodeBytes::get_lower_nibble(self.first_byte), OpcodeBytes::get_upper_nibble(self.second_byte)),
             (0x8, 0xE, _, _) => Opcode::BitShiftLeft(OpcodeBytes::get_lower_nibble(self.first_byte), OpcodeBytes::get_upper_nibble(self.second_byte)),
             (0x9, 0x0, _, _) => Opcode::SkipRegistersNotEqual(OpcodeBytes::get_lower_nibble(self.first_byte), OpcodeBytes::get_upper_nibble(self.second_byte)),
-            (0xA, _, _, _) => Opcode::SetRegisterI(self.get_addr()),
+            (0xA, _, _, _) => Opcode::LoadRegisterI(self.get_addr()),
             (0xB, _, _, _) => Opcode::JumpAddrV0(self.get_addr()),
             (0xC, _, _, _) => Opcode::Random(OpcodeBytes::get_lower_nibble(self.first_byte), self.second_byte),
             (0xD, _, _, _) => Opcode::Draw(OpcodeBytes::get_lower_nibble(self.first_byte), OpcodeBytes::get_upper_nibble(self.second_byte), OpcodeBytes::get_lower_nibble_u8(self.second_byte)),
@@ -311,7 +311,7 @@ mod tests {
     #[test]
     fn get_set_register_i_opcode() {
         let opcode_bytes = OpcodeBytes::build(&[0xAB, 0xF3]);
-        assert_eq!(opcode_bytes.get_opcode(), Opcode::SetRegisterI(0xBF3));
+        assert_eq!(opcode_bytes.get_opcode(), Opcode::LoadRegisterI(0xBF3));
     }
 
     #[test]

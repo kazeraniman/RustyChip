@@ -3,6 +3,8 @@ use crate::opcodes::Opcode;
 
 const PROGRAM_COUNTER_INCREMENT: u16 = 0x2;
 const BYTE_MASK: u16 = u8::MAX as u16;
+const LEAST_SIGNIFICANT_BIT_MASK: u8 = 0x1;
+const MOST_SIGNIFICANT_BIT_MASK: u8 = 0x80;
 
 struct Interpreter {
     ram: [u8; 4096],
@@ -47,9 +49,9 @@ impl Interpreter {
             Opcode::Xor(first_register, second_register) => self.xor(first_register, second_register),
             Opcode::AddRegisters(first_register, second_register) => self.add_registers(first_register, second_register),
             Opcode::SubtractFromFirstRegister(first_register, second_register) => self.bounded_subtraction(first_register, second_register, first_register),
-            Opcode::BitShiftRight(_, _) => {}
+            Opcode::BitShiftRight(register) => self.bit_shift_right(register),
             Opcode::SubtractFromSecondRegister(first_register, second_register) => self.bounded_subtraction(second_register, first_register, first_register),
-            Opcode::BitShiftLeft(_, _) => {}
+            Opcode::BitShiftLeft(register) => self.bit_shift_left(register),
             Opcode::SkipRegistersNotEqual(first_register, second_register) => self.skip_registers_not_equal(first_register, second_register),
             Opcode::LoadRegisterI(address) => self.load_register_i(address),
             Opcode::JumpAddrV0(address) => self.jump_address_v0(address),
@@ -63,7 +65,7 @@ impl Interpreter {
             Opcode::SetSoundTimer(register) => self.set_sound_timer(register),
             Opcode::AddRegisterI(register) => self.add_register_i(register),
             Opcode::SetIHexSpriteLocation(_) => {}
-            Opcode::BinaryCodedDecimal(_) => {}
+            Opcode::BinaryCodedDecimal(register) => self.binary_coded_decimal(register),
             Opcode::StoreRegisters(register) => self.store_registers(register),
             Opcode::LoadRegisters(register) => self.load_registers(register)
         }
@@ -175,6 +177,25 @@ impl Interpreter {
         let (difference, did_underflow) = self.registers[minuend_register].overflowing_sub(self.registers[subtrahend_register]);
         self.register_f = did_underflow;
         self.registers[result_register] = difference;
+    }
+
+    fn bit_shift_right(&mut self, register: usize) {
+        self.register_f = (self.registers[register] & LEAST_SIGNIFICANT_BIT_MASK) == 0x1;
+        self.registers[register] >>= 0x1;
+    }
+
+    fn bit_shift_left(&mut self, register: usize) {
+        self.register_f = ((self.registers[register] & MOST_SIGNIFICANT_BIT_MASK) >> 7) == 0x1;
+        self.registers[register] <<= 0x1;
+    }
+
+    fn binary_coded_decimal(&mut self, register: usize) {
+        let mut value = self.registers[register];
+
+        for i in (0..=2).rev() {
+            self.ram[(self.register_i + i) as usize] = value % 10;
+            value /= 10;
+        }
     }
 }
 
@@ -569,5 +590,54 @@ mod tests {
         assert_eq!(interpreter.registers[second_register], underflowing_difference, "Underflowing subtraction failed.");
         assert_eq!(interpreter.registers[first_register], difference, "First register modified.");
         assert_eq!(interpreter.register_f, true, "Borrow bit incorrectly not set.");
+    }
+
+    #[test]
+    fn handle_bit_shift_right_opcode() {
+        let mut interpreter = Interpreter::new();
+
+        let register = 0x3;
+        let value = 0xAA;
+        interpreter.registers[register] = value;
+        interpreter.handle_opcode(Opcode::BitShiftRight(register));
+        assert_eq!(interpreter.registers[register], value >> 1, "Bit shift right failed.");
+        assert_eq!(interpreter.register_f, false, "Shift bit incorrectly set");
+
+        interpreter.handle_opcode(Opcode::BitShiftRight(register));
+        assert_eq!(interpreter.registers[register], value >> 2, "Bit shift right failed.");
+        assert_eq!(interpreter.register_f, true, "Shift bit incorrectly not set");
+    }
+
+    #[test]
+    fn handle_bit_shift_left_opcode() {
+        let mut interpreter = Interpreter::new();
+
+        let register = 0xC;
+        let value = 0xAA;
+        interpreter.registers[register] = value;
+        interpreter.handle_opcode(Opcode::BitShiftLeft(register));
+        assert_eq!(interpreter.registers[register], value << 1, "Bit shift left failed.");
+        assert_eq!(interpreter.register_f, true, "Shift bit incorrectly not set");
+
+        interpreter.handle_opcode(Opcode::BitShiftLeft(register));
+        assert_eq!(interpreter.registers[register], value << 2, "Bit shift left failed.");
+        assert_eq!(interpreter.register_f, false, "Shift bit incorrectly set");
+    }
+
+    #[test]
+    fn handle_binary_encoded_decimal_opcode() {
+        let mut interpreter = Interpreter::new();
+
+        let register = 0xA;
+        let value = 0xDA;
+        let starting_address = 0x783;
+        interpreter.registers[register] = value;
+        interpreter.register_i = starting_address;
+        interpreter.handle_opcode(Opcode::BinaryCodedDecimal(register));
+        assert_eq!(interpreter.ram[starting_address as usize], 0x2, "Binary encoded decimal hundreds digit incorrect.");
+        assert_eq!(interpreter.ram[(starting_address + 0x1) as usize], 0x1, "Binary encoded decimal tens digit incorrect.");
+        assert_eq!(interpreter.ram[(starting_address + 0x2) as usize], 0x8, "Binary encoded decimal units digit incorrect.");
+        assert_eq!(interpreter.registers[register], value, "Register modified.");
+        assert_eq!(interpreter.register_i, starting_address, "Register I modified.");
     }
 }

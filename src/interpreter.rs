@@ -14,7 +14,8 @@ struct Interpreter {
     delay_timer: u8,
     sound_timer: u8,
     program_counter: u16,
-    stack_pointer: u8
+    stack_pointer: usize,
+    stack: [u16; 16]
 }
 
 impl Interpreter {
@@ -28,16 +29,16 @@ impl Interpreter {
             sound_timer: 0,
             program_counter: 0,
             stack_pointer: 0,
+            stack: [0; 16]
         }
     }
 
     fn handle_opcode(&mut self, opcode: Opcode) {
         match opcode {
-            Opcode::SystemAddr(_) => {}
             Opcode::ClearScreen => {}
-            Opcode::Return => {}
+            Opcode::Return => self.return_from_subroutine(),
             Opcode::JumpAddr(address) => self.jump_addr(address),
-            Opcode::CallAddr(_) => {}
+            Opcode::SystemAddr(address) | Opcode::CallAddr(address) => self.call_addr(address),
             Opcode::SkipRegisterEqualsValue(register, value) => self.skip_register_equals_value(register, value),
             Opcode::SkipRegisterNotEqualsValue(register, value) => self.skip_register_not_equals_value(register, value),
             Opcode::SkipRegistersEqual(first_register, second_register) => self.skip_registers_equal(first_register, second_register),
@@ -197,6 +198,17 @@ impl Interpreter {
             value /= 10;
         }
     }
+
+    fn call_addr(&mut self, address: u16) {
+        self.stack[self.stack_pointer] = self.program_counter;
+        self.stack_pointer += 1;
+        self.program_counter = address;
+    }
+
+    fn return_from_subroutine(&mut self) {
+        self.program_counter = self.stack[self.stack_pointer - 1];
+        self.stack_pointer -= 1;
+    }
 }
 
 #[cfg(test)]
@@ -219,6 +231,10 @@ mod tests {
 
         for byte in interpreter.registers.iter() {
             assert_eq!(byte, &0);
+        }
+
+        for address in interpreter.stack.iter() {
+            assert_eq!(address, &0);
         }
     }
 
@@ -639,5 +655,49 @@ mod tests {
         assert_eq!(interpreter.ram[(starting_address + 0x2) as usize], 0x8, "Binary encoded decimal units digit incorrect.");
         assert_eq!(interpreter.registers[register], value, "Register modified.");
         assert_eq!(interpreter.register_i, starting_address, "Register I modified.");
+    }
+
+    #[test]
+    fn handle_call_addr_oppcode() {
+        let mut interpreter = Interpreter::new();
+
+        let original_program_counter = 0x7E2;
+        let first_address = 0x999;
+        let second_address = 0x432;
+        let current_program_counter = original_program_counter;
+        interpreter.program_counter = current_program_counter;
+        interpreter.handle_opcode(Opcode::CallAddr(first_address));
+        assert_eq!(interpreter.program_counter, first_address, "Program counter not updated.");
+        assert_eq!(interpreter.stack[interpreter.stack_pointer - 1], current_program_counter, "Program counter not placed on the stack.");
+        assert_eq!(interpreter.stack_pointer, 0x1, "Stack pointer not incremented.");
+
+        let current_program_counter = first_address;
+        interpreter.handle_opcode(Opcode::SystemAddr(second_address));
+        assert_eq!(interpreter.program_counter, second_address, "Program counter not updated.");
+        assert_eq!(interpreter.stack[interpreter.stack_pointer - 1], current_program_counter, "Program counter not placed on the stack.");
+        assert_eq!(interpreter.stack_pointer, 0x2, "Stack pointer not incremented.");
+        assert_eq!(interpreter.stack[interpreter.stack_pointer - 2], original_program_counter, "Previous address on the stack modified.");
+    }
+
+    #[test]
+    fn handle_return_opcode() {
+        let mut interpreter = Interpreter::new();
+
+        let top_address = 0x234;
+        let bottom_address = 0x123;
+        interpreter.stack_pointer = 0x2;
+        interpreter.stack[0x0] = bottom_address;
+        interpreter.stack[0x1] = top_address;
+        interpreter.handle_opcode(Opcode::Return);
+        assert_eq!(interpreter.program_counter, top_address, "Return from subroutine failed after one call.");
+        assert_eq!(interpreter.stack_pointer, 0x1, "Stack pointer not decremented.");
+        assert_eq!(interpreter.stack[interpreter.stack_pointer], top_address, "Top address on the stack modified.");
+        assert_eq!(interpreter.stack[interpreter.stack_pointer - 1], bottom_address, "Bottom address on the stack modified.");
+
+        interpreter.handle_opcode(Opcode::Return);
+        assert_eq!(interpreter.program_counter, bottom_address, "Return from subroutine failed after two calls.");
+        assert_eq!(interpreter.stack_pointer, 0x0, "Stack pointer not decremented.");
+        assert_eq!(interpreter.stack[interpreter.stack_pointer + 1], top_address, "Top address on the stack modified.");
+        assert_eq!(interpreter.stack[interpreter.stack_pointer], bottom_address, "Bottom address on the stack modified.");
     }
 }

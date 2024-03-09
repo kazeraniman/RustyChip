@@ -1,4 +1,6 @@
+use std::collections::{HashSet};
 use rand::random;
+use sdl2::keyboard::Keycode;
 use crate::opcodes::{Opcode, OpcodeBytes};
 
 const PROGRAM_START_ADDRESS: u16 = 0x200;
@@ -34,7 +36,10 @@ pub struct Interpreter {
     sound_timer: u8,
     program_counter: u16,
     stack_pointer: usize,
-    stack: [u16; 16]
+    stack: [u16; 16],
+    keyboard: HashSet<u8>,
+    should_wait_for_key: bool,
+    wait_for_key_register: usize
 }
 
 impl Interpreter {
@@ -53,7 +58,10 @@ impl Interpreter {
             sound_timer: 0,
             program_counter: 0,
             stack_pointer: 0,
-            stack: [0; 16]
+            stack: [0; 16],
+            keyboard: HashSet::new(),
+            should_wait_for_key: false,
+            wait_for_key_register: 0
         }
     }
 
@@ -65,7 +73,52 @@ impl Interpreter {
         self.program_counter = PROGRAM_START_ADDRESS;
     }
 
+    fn get_key_mapping(keycode: Keycode) -> Option<u8> {
+        let key = match keycode {
+            Keycode::Num1 => 0x1,
+            Keycode::Num2 => 0x2,
+            Keycode::Num3 => 0x3,
+            Keycode::Num4 => 0xC,
+            Keycode::Q => 0x4,
+            Keycode::W => 0x5,
+            Keycode::E => 0x6,
+            Keycode::R => 0xD,
+            Keycode::A => 0x7,
+            Keycode::S => 0x8,
+            Keycode::D => 0x9,
+            Keycode::F => 0xE,
+            Keycode::Z => 0xA,
+            Keycode::X => 0x0,
+            Keycode::C => 0xB,
+            Keycode::V => 0xF,
+            _ => return None
+        };
+
+        Some(key)
+    }
+
+    pub fn handle_key_press(&mut self, keycode: Keycode) {
+        if let Some(key) = Self::get_key_mapping(keycode) {
+            if self.should_wait_for_key {
+                self.registers[self.wait_for_key_register] = key;
+                self.should_wait_for_key = false;
+            }
+
+            self.keyboard.insert(key);
+        }
+    }
+
+    pub fn handle_key_release(&mut self, keycode: Keycode) {
+        if let Some(key) = Self::get_key_mapping(keycode) {
+            self.keyboard.remove(&key);
+        }
+    }
+
     pub fn handle_cycle(&mut self) {
+        if self.should_wait_for_key {
+            return;
+        }
+
         let opcode = OpcodeBytes::build(&self.ram[self.program_counter as usize..=(self.program_counter + 1) as usize]);
         let opcode = opcode.get_opcode();
         self.program_counter += PROGRAM_COUNTER_INCREMENT;
@@ -103,10 +156,10 @@ impl Interpreter {
             Opcode::JumpAddrV0(address) => self.jump_address_v0(address),
             Opcode::Random(register, value) => self.random(register, value),
             Opcode::Draw(_, _, _) => {}
-            Opcode::SkipKeyPressed(_) => {}
-            Opcode::SkipKeyNotPressed(_) => {}
+            Opcode::SkipKeyPressed(register) => self.skip_key_pressed(register),
+            Opcode::SkipKeyNotPressed(register) => self.skip_key_not_pressed(register),
             Opcode::LoadDelayTimer(register) => self.load_delay_timer(register),
-            Opcode::LoadKeyPress(_) => {}
+            Opcode::LoadKeyPress(register) => self.load_key_press(register),
             Opcode::SetDelayTimer(register) => self.set_delay_timer(register),
             Opcode::SetSoundTimer(register) => self.set_sound_timer(register),
             Opcode::AddRegisterI(register) => self.add_register_i(register),
@@ -123,25 +176,25 @@ impl Interpreter {
 
     fn skip_register_equals_value(&mut self, register: usize, value: u8) {
         if self.registers[register] == value {
-            self.program_counter += 2;
+            self.program_counter += PROGRAM_COUNTER_INCREMENT;
         }
     }
 
     fn skip_register_not_equals_value(&mut self, register: usize, value: u8) {
         if self.registers[register] != value {
-            self.program_counter += 2;
+            self.program_counter += PROGRAM_COUNTER_INCREMENT;
         }
     }
 
     fn skip_registers_equal(&mut self, first_register: usize, second_register: usize) {
         if self.registers[first_register] == self.registers[second_register] {
-            self.program_counter += 2;
+            self.program_counter += PROGRAM_COUNTER_INCREMENT;
         }
     }
 
     fn skip_registers_not_equal(&mut self, first_register: usize, second_register: usize) {
         if self.registers[first_register] != self.registers[second_register] {
-            self.program_counter += 2;
+            self.program_counter += PROGRAM_COUNTER_INCREMENT;
         }
     }
 
@@ -258,6 +311,23 @@ impl Interpreter {
     fn set_register_i_hex_sprite_location(&mut self, register: usize) {
         self.register_i = (self.registers[register] as u16) * 0x5;
     }
+
+    fn skip_key_pressed(&mut self, register: usize) {
+        if self.keyboard.contains(&self.registers[register]) {
+            self.program_counter += PROGRAM_COUNTER_INCREMENT;
+        }
+    }
+
+    fn skip_key_not_pressed(&mut self, register: usize) {
+        if !self.keyboard.contains(&self.registers[register]) {
+            self.program_counter += PROGRAM_COUNTER_INCREMENT;
+        }
+    }
+
+    fn load_key_press(&mut self, register: usize) {
+        self.should_wait_for_key = true;
+        self.wait_for_key_register = register;
+    }
 }
 
 #[cfg(test)]
@@ -267,24 +337,27 @@ mod tests {
     #[test]
     fn create_interpreter() {
         let interpreter = Interpreter::new();
-        assert_eq!(interpreter.register_i, 0);
-        assert_eq!(interpreter.register_f, false);
-        assert_eq!(interpreter.delay_timer, 0);
-        assert_eq!(interpreter.sound_timer, 0);
-        assert_eq!(interpreter.program_counter, 0);
-        assert_eq!(interpreter.stack_pointer, 0);
+        assert_eq!(interpreter.register_i, 0, "Register I initialized incorrectly.");
+        assert!(!interpreter.register_f, "Register F initialized incorrectly.");
+        assert_eq!(interpreter.delay_timer, 0, "Delay timer initialized incorrectly.");
+        assert_eq!(interpreter.sound_timer, 0, "Sound timer initialized incorrectly.");
+        assert_eq!(interpreter.program_counter, 0, "Program counter initialized incorrectly.");
+        assert_eq!(interpreter.stack_pointer, 0, "Stack pointer initialized incorrectly.");
+        assert_eq!(interpreter.keyboard.len(), 0, "Keyboard initialized incorrectly.");
+        assert!(!interpreter.should_wait_for_key, "Should wait for key initialized incorrectly.");
+        assert_eq!(interpreter.wait_for_key_register, 0, "Wait for key register initialized incorrectly.");
 
         let hex_digit_sprite_length = HEXADECIMAL_DIGIT_SPRITES.len();
         for (i, byte) in interpreter.ram.iter().enumerate() {
-            assert_eq!(byte, if i < hex_digit_sprite_length { &HEXADECIMAL_DIGIT_SPRITES[i] } else { &0 });
+            assert_eq!(byte, if i < hex_digit_sprite_length { &HEXADECIMAL_DIGIT_SPRITES[i] } else { &0 }, "RAM initialized incorrectly.");
         }
 
         for byte in interpreter.registers.iter() {
-            assert_eq!(byte, &0);
+            assert_eq!(byte, &0, "Registers initialized incorrectly.");
         }
 
         for address in interpreter.stack.iter() {
-            assert_eq!(address, &0);
+            assert_eq!(address, &0, "Stack initialized incorrectly.");
         }
     }
 
@@ -344,10 +417,81 @@ mod tests {
         assert_eq!(interpreter.sound_timer, 0x0, "Sound timer not saturated at 0.");
     }
 
+    #[test]
+    fn get_key_mapping() {
+        assert_eq!(Interpreter::get_key_mapping(Keycode::Num1), Some(0x1), "Incorrect key mapping.");
+        assert_eq!(Interpreter::get_key_mapping(Keycode::Num2), Some(0x2), "Incorrect key mapping.");
+        assert_eq!(Interpreter::get_key_mapping(Keycode::Num3), Some(0x3), "Incorrect key mapping.");
+        assert_eq!(Interpreter::get_key_mapping(Keycode::Num4), Some(0xC), "Incorrect key mapping.");
+        assert_eq!(Interpreter::get_key_mapping(Keycode::Q), Some(0x4), "Incorrect key mapping.");
+        assert_eq!(Interpreter::get_key_mapping(Keycode::W), Some(0x5), "Incorrect key mapping.");
+        assert_eq!(Interpreter::get_key_mapping(Keycode::E), Some(0x6), "Incorrect key mapping.");
+        assert_eq!(Interpreter::get_key_mapping(Keycode::R), Some(0xD), "Incorrect key mapping.");
+        assert_eq!(Interpreter::get_key_mapping(Keycode::A), Some(0x7), "Incorrect key mapping.");
+        assert_eq!(Interpreter::get_key_mapping(Keycode::S), Some(0x8), "Incorrect key mapping.");
+        assert_eq!(Interpreter::get_key_mapping(Keycode::D), Some(0x9), "Incorrect key mapping.");
+        assert_eq!(Interpreter::get_key_mapping(Keycode::F), Some(0xE), "Incorrect key mapping.");
+        assert_eq!(Interpreter::get_key_mapping(Keycode::Z), Some(0xA), "Incorrect key mapping.");
+        assert_eq!(Interpreter::get_key_mapping(Keycode::X), Some(0x0), "Incorrect key mapping.");
+        assert_eq!(Interpreter::get_key_mapping(Keycode::C), Some(0xB), "Incorrect key mapping.");
+        assert_eq!(Interpreter::get_key_mapping(Keycode::V), Some(0xF), "Incorrect key mapping.");
+        assert_eq!(Interpreter::get_key_mapping(Keycode::G), None, "Ignored key is mapped.");
+    }
+
+    #[test]
+    fn handle_key_press() {
+        let mut interpreter = Interpreter::new();
+
+        let q_key_mapping = &Interpreter::get_key_mapping(Keycode::Q).unwrap();
+        let f_key_mapping = &Interpreter::get_key_mapping(Keycode::F).unwrap();
+        interpreter.handle_key_press(Keycode::Q);
+        assert!(interpreter.keyboard.contains(q_key_mapping), "Key press not stored.");
+        assert_eq!(interpreter.keyboard.len(), 1, "Wrong number of keypresses stored.");
+
+        // Testing that repeated press doesn't break anything
+        interpreter.handle_key_press(Keycode::Q);
+        assert!(interpreter.keyboard.contains(q_key_mapping), "Key press not stored.");
+        assert_eq!(interpreter.keyboard.len(), 1, "Wrong number of keypresses stored.");
+
+        interpreter.handle_key_press(Keycode::F);
+        assert!(interpreter.keyboard.contains(f_key_mapping), "Key press not stored.");
+        assert!(interpreter.keyboard.contains(q_key_mapping), "Stored key press removed.");
+        assert_eq!(interpreter.keyboard.len(), 2, "Wrong number of keypresses stored.");
+    }
+
+    #[test]
+    fn handle_key_release() {
+        let mut interpreter = Interpreter::new();
+
+        let q_key_mapping = &Interpreter::get_key_mapping(Keycode::Q).unwrap();
+        let f_key_mapping = &Interpreter::get_key_mapping(Keycode::F).unwrap();
+        interpreter.keyboard.insert(*q_key_mapping);
+        interpreter.keyboard.insert(*f_key_mapping);
+        interpreter.handle_key_release(Keycode::L);
+        assert!(interpreter.keyboard.contains(q_key_mapping), "Stored key press removed.");
+        assert!(interpreter.keyboard.contains(f_key_mapping), "Stored key press removed.");
+        assert_eq!(interpreter.keyboard.len(), 2, "Wrong number of keypresses stored.");
+
+        interpreter.handle_key_release(Keycode::Q);
+        assert!(!interpreter.keyboard.contains(q_key_mapping), "Key press stored.");
+        assert!(interpreter.keyboard.contains(f_key_mapping), "Key press not stored.");
+        assert_eq!(interpreter.keyboard.len(), 1, "Wrong number of keypresses stored.");
+
+        // Testing that repeated release doesn't break anything
+        interpreter.handle_key_release(Keycode::Q);
+        assert!(!interpreter.keyboard.contains(q_key_mapping), "Key press stored.");
+        assert!(interpreter.keyboard.contains(f_key_mapping), "Key press not stored.");
+        assert_eq!(interpreter.keyboard.len(), 1, "Wrong number of keypresses stored.");
+
+        interpreter.handle_key_release(Keycode::F);
+        assert!(!interpreter.keyboard.contains(f_key_mapping), "Key press stored.");
+        assert!(!interpreter.keyboard.contains(q_key_mapping), "Key press stored.");
+        assert_eq!(interpreter.keyboard.len(), 0, "Wrong number of keypresses stored.");
+    }
+
     #[cfg(test)]
     mod opcode_tests {
-        use crate::interpreter::{Interpreter, PROGRAM_COUNTER_INCREMENT};
-        use crate::opcodes::Opcode;
+        use super::*;
 
         #[test]
         fn handle_jump_addr_opcode() {
@@ -822,6 +966,79 @@ mod tests {
             interpreter.handle_opcode(Opcode::SetIHexSpriteLocation(register));
             assert_eq!(interpreter.register_i, 0x46, "Register I not set correctly.");
             assert_eq!(interpreter.registers[register], value, "Register value modified.");
+        }
+
+        #[test]
+        fn handle_skip_key_pressed_opcode() {
+            let mut interpreter = Interpreter::new();
+
+            let register = 0xA;
+            let value = 0x5;
+            let other_key = 0x8;
+            interpreter.registers[register] = value;
+            interpreter.keyboard.insert(other_key);
+            interpreter.handle_opcode(Opcode::SkipKeyPressed(register));
+            assert_eq!(interpreter.program_counter, 0x0, "Program counter incremented incorrectly.");
+            assert_eq!(interpreter.registers[register], value, "Register value modified.");
+            assert!(interpreter.keyboard.contains(&other_key), "Keys pressed modified.");
+            assert_eq!(interpreter.keyboard.len(), 0x1, "Number of keys pressed is incorrect.");
+
+            interpreter.keyboard.insert(value);
+            interpreter.handle_opcode(Opcode::SkipKeyPressed(register));
+            assert_eq!(interpreter.program_counter, PROGRAM_COUNTER_INCREMENT, "Program counter not incremented.");
+            assert_eq!(interpreter.registers[register], value, "Register value modified.");
+            assert!(interpreter.keyboard.contains(&value), "Keys pressed modified.");
+            assert!(interpreter.keyboard.contains(&other_key), "Keys pressed modified.");
+            assert_eq!(interpreter.keyboard.len(), 0x2, "Number of keys pressed is incorrect.");
+        }
+
+        #[test]
+        fn handle_skip_key_not_pressed_opcode() {
+            let mut interpreter = Interpreter::new();
+
+            let register = 0xA;
+            let value = 0x5;
+            let other_key = 0x8;
+            interpreter.registers[register] = value;
+            interpreter.keyboard.insert(value);
+            interpreter.keyboard.insert(other_key);
+            interpreter.handle_opcode(Opcode::SkipKeyNotPressed(register));
+            assert_eq!(interpreter.program_counter, 0x0, "Program counter incremented incorrectly.");
+            assert_eq!(interpreter.registers[register], value, "Register value modified.");
+            assert!(interpreter.keyboard.contains(&value), "Keys pressed modified.");
+            assert!(interpreter.keyboard.contains(&other_key), "Keys pressed modified.");
+            assert_eq!(interpreter.keyboard.len(), 0x2, "Number of keys pressed is incorrect.");
+
+            interpreter.keyboard.remove(&value);
+            interpreter.handle_opcode(Opcode::SkipKeyNotPressed(register));
+            assert_eq!(interpreter.program_counter, PROGRAM_COUNTER_INCREMENT, "Program counter not incremented.");
+            assert_eq!(interpreter.registers[register], value, "Register value modified.");
+            assert!(interpreter.keyboard.contains(&other_key), "Keys pressed modified.");
+            assert_eq!(interpreter.keyboard.len(), 0x1, "Number of keys pressed is incorrect.");
+        }
+
+        #[test]
+        fn handle_load_key_press_opcode() {
+            let mut interpreter = Interpreter::new();
+
+            let register = 0x7;
+            let program_start_usize = PROGRAM_START_ADDRESS as usize;
+            interpreter.program_counter = PROGRAM_START_ADDRESS;
+            interpreter.ram[program_start_usize] = 0xAA;
+            interpreter.ram[program_start_usize + 1] = 0xAA;
+            interpreter.handle_opcode(Opcode::LoadKeyPress(register));
+            interpreter.handle_cycle();
+            assert_eq!(interpreter.register_i, 0x0, "Opcode handled when execution should have been paused.");
+            assert_eq!(interpreter.program_counter, PROGRAM_START_ADDRESS, "Program counter incremented incorrectly.");
+            assert!(interpreter.should_wait_for_key, "Not waiting for key press.");
+            assert_eq!(interpreter.wait_for_key_register, register, "Wrong register set for loading.");
+
+            interpreter.handle_key_press(Keycode::Q);
+            interpreter.handle_cycle();
+            assert_eq!(interpreter.register_i, 0xAAA, "Opcode not handled.");
+            assert_eq!(interpreter.program_counter, PROGRAM_START_ADDRESS + PROGRAM_COUNTER_INCREMENT, "Program counter not incremented.");
+            assert!(!interpreter.should_wait_for_key, "Waiting for key press.");
+            assert_eq!(interpreter.registers[register], 0x4, "Wrong key loaded into register.");
         }
     }
 }

@@ -42,6 +42,9 @@ pub fn run() -> Result<(), String> {
                 Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
                     break 'game_loop;
                 },
+                Event::KeyDown { keycode: Some(keycode), .. } => {
+                    interpreter.handle_key_press(keycode);
+                },
                 _ => {}
             }
         }

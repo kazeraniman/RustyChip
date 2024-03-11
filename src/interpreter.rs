@@ -303,16 +303,16 @@ impl<'a> Interpreter<'a> {
     }
 
     fn store_registers(&mut self, register: usize) {
-        let start_address = self.register_i as usize;
         for i in 0..=register {
-            self.ram[start_address + i] = self.registers[i];
+            self.ram[self.register_i as usize] = self.registers[i];
+            self.register_i += 1;
         }
     }
 
     fn load_registers(&mut self, register: usize) {
-        let start_address = self.register_i as usize;
         for i in 0..=register {
-            self.registers[i] = self.ram[start_address + i];
+            self.registers[i] = self.ram[self.register_i as usize];
+            self.register_i += 1;
         }
     }
 
@@ -810,7 +810,7 @@ mod tests {
 
             assert_eq!(interpreter.ram[starting_address_usize - 0x1], 0x0, "Ram location before starting address modified.");
             assert_eq!(interpreter.ram[starting_address_usize + register + 0x1], 0x0, "Ram location past modification area modified.");
-            assert_eq!(interpreter.register_i, starting_address, "Register I value modified.");
+            assert_eq!(interpreter.register_i, starting_address + register as u16 + 1, "Register I value not incremented.");
 
             for i in 0..=register {
                 assert_eq!(interpreter.ram[starting_address_usize + i], register_values[i], "Register value not stored.");
@@ -837,7 +837,7 @@ mod tests {
             interpreter.handle_opcode(Opcode::LoadRegisters(register));
 
             assert_eq!(interpreter.registers[register + 0x1], 0x0, "Register after modification area modified.");
-            assert_eq!(interpreter.register_i, starting_address, "Register I value modified.");
+            assert_eq!(interpreter.register_i, starting_address + register as u16 + 1, "Register I value not incremented.");
 
             for i in 0..=register {
                 assert_eq!(interpreter.registers[i], ram_values[i], "Register value not loaded.");

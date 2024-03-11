@@ -220,9 +220,9 @@ impl<'a> Interpreter<'a> {
             Opcode::Xor(first_register, second_register) => self.xor(first_register, second_register),
             Opcode::AddRegisters(first_register, second_register) => self.add_registers(first_register, second_register),
             Opcode::SubtractFromFirstRegister(first_register, second_register) => self.bounded_subtraction(first_register, second_register, first_register),
-            Opcode::BitShiftRight(register) => self.bit_shift_right(register),
+            Opcode::BitShiftRight(first_register, second_register) => self.bit_shift_right(first_register, second_register),
             Opcode::SubtractFromSecondRegister(first_register, second_register) => self.bounded_subtraction(second_register, first_register, first_register),
-            Opcode::BitShiftLeft(register) => self.bit_shift_left(register),
+            Opcode::BitShiftLeft(first_register, second_register) => self.bit_shift_left(first_register, second_register),
             Opcode::SkipRegistersNotEqual(first_register, second_register) => self.skip_registers_not_equal(first_register, second_register),
             Opcode::LoadRegisterI(address) => self.load_register_i(address),
             Opcode::JumpAddrV0(address) => self.jump_address_v0(address),
@@ -354,14 +354,14 @@ impl<'a> Interpreter<'a> {
         self.registers[REGISTER_F] = if !did_underflow { 1 } else { 0 };
     }
 
-    fn bit_shift_right(&mut self, register: usize) {
-        self.registers[REGISTER_F] = if (self.registers[register] & LEAST_SIGNIFICANT_BIT_MASK) == 0x1 { 1 } else { 0 };
-        self.registers[register] >>= 0x1;
+    fn bit_shift_right(&mut self, first_register: usize, second_register: usize) {
+        self.registers[REGISTER_F] = if (self.registers[second_register] & LEAST_SIGNIFICANT_BIT_MASK) == 0x1 { 1 } else { 0 };
+        self.registers[first_register] = self.registers[second_register] >> 0x1;
     }
 
-    fn bit_shift_left(&mut self, register: usize) {
-        self.registers[REGISTER_F] = if ((self.registers[register] & MOST_SIGNIFICANT_BIT_MASK) >> 7) == 0x1 { 1 } else { 0 };
-        self.registers[register] <<= 0x1;
+    fn bit_shift_left(&mut self, first_register: usize, second_register: usize) {
+        self.registers[REGISTER_F] = if ((self.registers[second_register] & MOST_SIGNIFICANT_BIT_MASK) >> 7) == 0x1 { 1 } else { 0 };
+        self.registers[first_register] = self.registers[second_register] << 0x1;
     }
 
     fn binary_coded_decimal(&mut self, register: usize) {
@@ -1046,15 +1046,19 @@ mod tests {
         fn handle_bit_shift_right_opcode() {
             let mut interpreter = Interpreter::new();
 
-            let register = 0x3;
+            let first_register = 0x3;
+            let second_register = 0x5;
             let value = 0xAA;
-            interpreter.registers[register] = value;
-            interpreter.handle_opcode(Opcode::BitShiftRight(register));
-            assert_eq!(interpreter.registers[register], value >> 1, "Bit shift right failed.");
+            interpreter.registers[second_register] = value;
+            interpreter.handle_opcode(Opcode::BitShiftRight(first_register, second_register));
+            assert_eq!(interpreter.registers[first_register], value >> 1, "Bit shift right failed.");
+            assert_eq!(interpreter.registers[second_register], value, "Second register modified.");
             assert_eq!(interpreter.registers[REGISTER_F], 0, "Shift bit incorrectly set");
 
-            interpreter.handle_opcode(Opcode::BitShiftRight(register));
-            assert_eq!(interpreter.registers[register], value >> 2, "Bit shift right failed.");
+            interpreter.registers[second_register] = interpreter.registers[first_register];
+            interpreter.handle_opcode(Opcode::BitShiftRight(first_register, second_register));
+            assert_eq!(interpreter.registers[first_register], value >> 2, "Bit shift right failed.");
+            assert_eq!(interpreter.registers[second_register], value >> 1, "Second register modified.");
             assert_eq!(interpreter.registers[REGISTER_F], 1, "Shift bit incorrectly not set");
         }
 
@@ -1062,15 +1066,19 @@ mod tests {
         fn handle_bit_shift_left_opcode() {
             let mut interpreter = Interpreter::new();
 
-            let register = 0xC;
+            let first_register = 0xC;
+            let second_register = 0xB;
             let value = 0xAA;
-            interpreter.registers[register] = value;
-            interpreter.handle_opcode(Opcode::BitShiftLeft(register));
-            assert_eq!(interpreter.registers[register], value << 1, "Bit shift left failed.");
+            interpreter.registers[second_register] = value;
+            interpreter.handle_opcode(Opcode::BitShiftLeft(first_register, second_register));
+            assert_eq!(interpreter.registers[first_register], value << 1, "Bit shift left failed.");
+            assert_eq!(interpreter.registers[second_register], value, "Second register modified.");
             assert_eq!(interpreter.registers[REGISTER_F], 1, "Shift bit incorrectly not set");
 
-            interpreter.handle_opcode(Opcode::BitShiftLeft(register));
-            assert_eq!(interpreter.registers[register], value << 2, "Bit shift left failed.");
+            interpreter.registers[second_register] = interpreter.registers[first_register];
+            interpreter.handle_opcode(Opcode::BitShiftLeft(first_register, second_register));
+            assert_eq!(interpreter.registers[first_register], value << 2, "Bit shift left failed.");
+            assert_eq!(interpreter.registers[second_register], value << 1, "Second register modified.");
             assert_eq!(interpreter.registers[REGISTER_F], 0, "Shift bit incorrectly set");
         }
 

@@ -25,9 +25,9 @@ pub enum Opcode {
     Xor(usize, usize),
     AddRegisters(usize, usize),
     SubtractFromFirstRegister(usize, usize),
-    BitShiftRight(usize),
+    BitShiftRight(usize, usize),
     SubtractFromSecondRegister(usize, usize),
-    BitShiftLeft(usize),
+    BitShiftLeft(usize, usize),
     SkipRegistersNotEqual(usize, usize),
     LoadRegisterI(u16),
     JumpAddrV0(u16),
@@ -106,9 +106,9 @@ impl OpcodeBytes {
             (0x8, 0x3, _, _) => Opcode::Xor(OpcodeBytes::get_lower_nibble(self.first_byte), OpcodeBytes::get_upper_nibble(self.second_byte)),
             (0x8, 0x4, _, _) => Opcode::AddRegisters(OpcodeBytes::get_lower_nibble(self.first_byte), OpcodeBytes::get_upper_nibble(self.second_byte)),
             (0x8, 0x5, _, _) => Opcode::SubtractFromFirstRegister(OpcodeBytes::get_lower_nibble(self.first_byte), OpcodeBytes::get_upper_nibble(self.second_byte)),
-            (0x8, 0x6, _, _) => Opcode::BitShiftRight(OpcodeBytes::get_lower_nibble(self.first_byte)),
+            (0x8, 0x6, _, _) => Opcode::BitShiftRight(OpcodeBytes::get_lower_nibble(self.first_byte), OpcodeBytes::get_upper_nibble(self.second_byte)),
             (0x8, 0x7, _, _) => Opcode::SubtractFromSecondRegister(OpcodeBytes::get_lower_nibble(self.first_byte), OpcodeBytes::get_upper_nibble(self.second_byte)),
-            (0x8, 0xE, _, _) => Opcode::BitShiftLeft(OpcodeBytes::get_lower_nibble(self.first_byte)),
+            (0x8, 0xE, _, _) => Opcode::BitShiftLeft(OpcodeBytes::get_lower_nibble(self.first_byte), OpcodeBytes::get_upper_nibble(self.second_byte)),
             (0x9, 0x0, _, _) => Opcode::SkipRegistersNotEqual(OpcodeBytes::get_lower_nibble(self.first_byte), OpcodeBytes::get_upper_nibble(self.second_byte)),
             (0xA, _, _, _) => Opcode::LoadRegisterI(self.get_addr()),
             (0xB, _, _, _) => Opcode::JumpAddrV0(self.get_addr()),
@@ -287,7 +287,7 @@ mod tests {
     #[test]
     fn get_bit_shift_right_opcode() {
         let opcode_bytes = OpcodeBytes::build(&[0x85, 0x36]);
-        assert_eq!(opcode_bytes.get_opcode(), Opcode::BitShiftRight(0x5));
+        assert_eq!(opcode_bytes.get_opcode(), Opcode::BitShiftRight(0x5, 0x3));
     }
 
     #[test]
@@ -299,7 +299,7 @@ mod tests {
     #[test]
     fn get_bit_shift_left_opcode() {
         let opcode_bytes = OpcodeBytes::build(&[0x8E, 0xCE]);
-        assert_eq!(opcode_bytes.get_opcode(), Opcode::BitShiftLeft(0xE));
+        assert_eq!(opcode_bytes.get_opcode(), Opcode::BitShiftLeft(0xE, 0xC));
     }
 
     #[test]

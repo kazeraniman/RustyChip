@@ -49,7 +49,10 @@ I have included the public domain games which I could find in a directory in the
 
 If I am mistaken and any games within are not a part of the public domain, please let me know and I will take them down immediately.
 
+## Testing Suite
+Aside from my own tests, I used [Timendus' chip8-test-suite](https://github.com/Timendus/chip8-test-suite) which was invaluable in tracking misunderstanding and edge-cases. Highly, highly recommend it to anyone trying to track down issues.
+
 ## Reference Material
-[Wikipedia CHIP-8 Page](https://en.wikipedia.org/wiki/CHIP-8)  
+[Wikipedia CHIP-8 Page](https://en.wikipedia.org/wiki/CHIP-8)   
 [Cowgod's CHIP-8 Technical Reference](http://devernay.free.fr/hacks/chip8/C8TECH10.HTM)
 

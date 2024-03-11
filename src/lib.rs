@@ -66,6 +66,9 @@ pub fn run() -> Result<(), String> {
                 Event::KeyDown { keycode: Some(keycode), .. } => {
                     interpreter.handle_key_press(keycode);
                 },
+                Event::KeyUp { keycode: Some(keycode), .. } => {
+                    interpreter.handle_key_release(keycode);
+                },
                 _ => {}
             }
         }

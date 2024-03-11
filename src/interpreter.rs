@@ -127,7 +127,6 @@ impl<'a> Interpreter<'a> {
         if let Some(key) = Self::get_key_mapping(keycode) {
             if self.should_wait_for_key {
                 self.registers[self.wait_for_key_register] = key;
-                self.should_wait_for_key = false;
             }
 
             self.keyboard.insert(key);
@@ -137,6 +136,9 @@ impl<'a> Interpreter<'a> {
     pub fn handle_key_release(&mut self, keycode: Keycode) {
         if let Some(key) = Self::get_key_mapping(keycode) {
             self.keyboard.remove(&key);
+            if self.should_wait_for_key && self.registers[self.wait_for_key_register] == key {
+                self.should_wait_for_key = false;
+            }
         }
     }
 
@@ -1202,6 +1204,13 @@ mod tests {
             assert_eq!(interpreter.wait_for_key_register, register, "Wrong register set for loading.");
 
             interpreter.handle_key_press(Keycode::Q);
+            interpreter.handle_cycle();
+            assert_eq!(interpreter.register_i, 0x0, "Opcode handled when execution should have been paused.");
+            assert_eq!(interpreter.program_counter, PROGRAM_START_ADDRESS, "Program counter incremented incorrectly.");
+            assert!(interpreter.should_wait_for_key, "Not waiting for key press.");
+            assert_eq!(interpreter.registers[register], 0x4, "Wrong key loaded into register.");
+
+            interpreter.handle_key_release(Keycode::Q);
             interpreter.handle_cycle();
             assert_eq!(interpreter.register_i, 0xAAA, "Opcode not handled.");
             assert_eq!(interpreter.program_counter, PROGRAM_START_ADDRESS + PROGRAM_COUNTER_INCREMENT, "Program counter not incremented.");

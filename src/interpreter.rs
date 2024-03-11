@@ -20,6 +20,7 @@ const SCREEN_SCALE: u32 = 10;
 const DRAWING_BUFFER_SIZE: usize = (SCREEN_WIDTH * SCREEN_HEIGHT) as usize;
 pub const SCALED_WIDTH: u32 = SCREEN_WIDTH * SCREEN_SCALE;
 pub const SCALED_HEIGHT: u32 = SCREEN_HEIGHT * SCREEN_SCALE;
+const HEXADECIMAL_DIGIT_SPRITE_LENGTH: u8 = 0x5;
 const HEXADECIMAL_DIGIT_SPRITES: [u8; 80] = [
     0xF0, 0x90, 0x90, 0x90, 0xF0,
     0x20, 0x60, 0x20, 0x20, 0x70,
@@ -379,7 +380,7 @@ impl<'a> Interpreter<'a> {
     }
 
     fn set_register_i_hex_sprite_location(&mut self, register: usize) {
-        self.register_i = (self.registers[register] as u16) * 0x5;
+        self.register_i = (self.registers[register] * HEXADECIMAL_DIGIT_SPRITE_LENGTH) as u16;
     }
 
     fn skip_key_pressed(&mut self, register: usize) {
@@ -516,7 +517,13 @@ mod tests {
 
     #[test]
     fn handle_frame() {
-        todo!();
+        let mut interpreter = Interpreter::new();
+
+        interpreter.delay_timer = 0x1;
+        interpreter.sound_timer = 0x1;
+        interpreter.handle_timers();
+        assert_eq!(interpreter.delay_timer, 0x0, "Delay timer not decremented.");
+        assert_eq!(interpreter.sound_timer, 0x0, "Sound timer not decremented.");
     }
 
     #[test]
@@ -1145,12 +1152,69 @@ mod tests {
 
         #[test]
         fn handle_clear_screen_opcode() {
-            todo!();
+            let mut interpreter = Interpreter::new();
+
+            interpreter.drawing_buffer.iter_mut().for_each(|x| *x = random());
+            interpreter.handle_opcode(Opcode::ClearScreen);
+            assert_eq!(interpreter.drawing_buffer, [false; DRAWING_BUFFER_SIZE], "Drawing buffer was not cleared.");
         }
 
         #[test]
         fn handle_draw_opcode() {
-            todo!();
+            let mut interpreter = Interpreter::new();
+
+            let first_register = 0x0;
+            let second_register = 0x2;
+            let first_value = 0x1;
+            let second_value = 0x0;
+            interpreter.registers[first_register] = first_value;
+            interpreter.registers[second_register] = second_value;
+            interpreter.set_register_i_hex_sprite_location(first_register);
+            let first_value = 0x0;
+            interpreter.registers[first_register] = first_value;
+            interpreter.handle_opcode(Opcode::Draw(first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH));
+
+            // Draw a regular sprite
+            let ram_values = &HEXADECIMAL_DIGIT_SPRITES[HEXADECIMAL_DIGIT_SPRITE_LENGTH as usize..HEXADECIMAL_DIGIT_SPRITE_LENGTH as usize * 2];
+            assert_eq!(interpreter.registers[REGISTER_F], 0x0, "Collision bit incorrectly set.");
+            for i in 0..HEXADECIMAL_DIGIT_SPRITE_LENGTH as usize {
+                for j in 0..8 {
+                    assert_eq!(interpreter.drawing_buffer[i * SCREEN_WIDTH as usize + j], ((ram_values[i] >> (7 - j)) & 1) == 0x1, "Simple drawn value is incorrect.");
+                }
+            }
+
+            // Draw a sprite that wraps around the screen
+            let first_value = 20;
+            let second_value = (SCREEN_HEIGHT - 1) as u8;
+            interpreter.registers[first_register] = first_value;
+            interpreter.registers[second_register] = second_value;
+            interpreter.handle_opcode(Opcode::Draw(first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH));
+            assert_eq!(interpreter.registers[REGISTER_F], 0x0, "Collision bit incorrectly set.");
+            for i in 0..HEXADECIMAL_DIGIT_SPRITE_LENGTH as usize {
+                for j in 0..8 {
+                    let kek = ram_values[i];
+                    assert_eq!(interpreter.drawing_buffer[(((i + second_value as usize) * SCREEN_WIDTH as usize) + first_value as usize + j) % DRAWING_BUFFER_SIZE], ((kek >> (7 - j)) & 1) == 0x1, "Wrapping drawn value is incorrect.");
+                }
+            }
+
+            // Draw a colliding sprite
+            let first_value = 0x0;
+            let second_value = 0x0;
+            interpreter.registers[first_register] = first_value;
+            interpreter.registers[second_register] = second_value;
+            interpreter.set_register_i_hex_sprite_location(first_register);
+            let new_ram_values = &HEXADECIMAL_DIGIT_SPRITES[0..HEXADECIMAL_DIGIT_SPRITE_LENGTH as usize];
+            interpreter.handle_opcode(Opcode::Draw(first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH));
+            assert_eq!(interpreter.registers[REGISTER_F], 0x1, "Collision bit incorrectly not set.");
+            for i in 0..HEXADECIMAL_DIGIT_SPRITE_LENGTH as usize {
+                let sprite_one_byte = ram_values[i];
+                let sprite_two_byte = new_ram_values[i];
+                for j in 0..8 {
+                    let sprite_one_bit = (sprite_one_byte >> (7 - j)) & 1;
+                    let sprite_two_bit = (sprite_two_byte >> (7 - j)) & 1;
+                    assert_eq!(interpreter.drawing_buffer[i * SCREEN_WIDTH as usize + j], (sprite_one_bit ^ sprite_two_bit) == 0x1, "Overlapping drawn value is incorrect.");
+                }
+            }
         }
     }
 }

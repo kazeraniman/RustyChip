@@ -13,6 +13,7 @@ const PROGRAM_COUNTER_INCREMENT: u16 = 0x2;
 const BYTE_MASK: u16 = u8::MAX as u16;
 const LEAST_SIGNIFICANT_BIT_MASK: u8 = 0x1;
 const MOST_SIGNIFICANT_BIT_MASK: u8 = 0x80;
+const REGISTER_F: usize = 0xF;
 const SCREEN_WIDTH: u32 = 64;
 const SCREEN_HEIGHT: u32 = 32;
 const SCREEN_SCALE: u32 = 10;
@@ -42,7 +43,6 @@ pub struct Interpreter<'a> {
     ram: [u8; 4096],
     registers: [u8; 16],
     register_i: u16,
-    register_f: bool,
     delay_timer: u8,
     sound_timer: u8,
     program_counter: u16,
@@ -67,7 +67,6 @@ impl<'a> Interpreter<'a> {
             ram,
             registers: [0; 16],
             register_i: 0,
-            register_f: false,
             delay_timer: 0,
             sound_timer: 0,
             program_counter: 0,
@@ -339,23 +338,23 @@ impl<'a> Interpreter<'a> {
     fn add_registers(&mut self, first_register: usize, second_register: usize) {
         let sum: u16 = self.registers[first_register] as u16 + self.registers[second_register] as u16;
         let max_u8 = BYTE_MASK;
-        self.register_f = sum > max_u8;
+        self.registers[REGISTER_F] = if sum > max_u8 { 1 } else { 0 };
         self.registers[first_register] = (sum & max_u8) as u8;
     }
 
     fn bounded_subtraction(&mut self, minuend_register: usize, subtrahend_register: usize, result_register: usize) {
         let (difference, did_underflow) = self.registers[minuend_register].overflowing_sub(self.registers[subtrahend_register]);
-        self.register_f = did_underflow;
+        self.registers[REGISTER_F] = if did_underflow { 1 } else { 0 };
         self.registers[result_register] = difference;
     }
 
     fn bit_shift_right(&mut self, register: usize) {
-        self.register_f = (self.registers[register] & LEAST_SIGNIFICANT_BIT_MASK) == 0x1;
+        self.registers[REGISTER_F] = if (self.registers[register] & LEAST_SIGNIFICANT_BIT_MASK) == 0x1 { 1 } else { 0 };
         self.registers[register] >>= 0x1;
     }
 
     fn bit_shift_left(&mut self, register: usize) {
-        self.register_f = ((self.registers[register] & MOST_SIGNIFICANT_BIT_MASK) >> 7) == 0x1;
+        self.registers[REGISTER_F] = if ((self.registers[register] & MOST_SIGNIFICANT_BIT_MASK) >> 7) == 0x1 { 1 } else { 0 };
         self.registers[register] <<= 0x1;
     }
 
@@ -411,7 +410,7 @@ impl<'a> Interpreter<'a> {
     fn draw(&mut self, first_register: usize, second_register: usize, length: u8) {
         let base_x = self.registers[first_register];
         let base_y = self.registers[second_register];
-        self.register_f = false;
+        self.registers[REGISTER_F] = 0;
 
         for i in 0..length {
             let sprite_byte = self.ram[(self.register_i + i as u16) as usize];
@@ -423,7 +422,7 @@ impl<'a> Interpreter<'a> {
                 let display_bit = self.drawing_buffer[drawing_buffer_index];
 
                 if display_bit && target_bit == 0 {
-                    self.register_f = true;
+                    self.registers[REGISTER_F] = 1;
                 }
 
                 let is_set = display_bit ^ (target_bit == 1);
@@ -441,7 +440,6 @@ mod tests {
     fn create_interpreter() {
         let interpreter = Interpreter::new();
         assert_eq!(interpreter.register_i, 0, "Register I initialized incorrectly.");
-        assert!(!interpreter.register_f, "Register F initialized incorrectly.");
         assert_eq!(interpreter.delay_timer, 0, "Delay timer initialized incorrectly.");
         assert_eq!(interpreter.sound_timer, 0, "Sound timer initialized incorrectly.");
         assert_eq!(interpreter.program_counter, 0, "Program counter initialized incorrectly.");
@@ -917,7 +915,7 @@ mod tests {
             interpreter.handle_opcode(Opcode::AddRegisters(first_register, second_register));
             assert_eq!(interpreter.registers[first_register], first_value + second_value, "Basic addition failed.");
             assert_eq!(interpreter.registers[second_register], second_value, "Second register modified.");
-            assert_eq!(interpreter.register_f, false, "Overflow bit incorrectly set.");
+            assert_eq!(interpreter.registers[REGISTER_F], 0, "Overflow bit incorrectly set.");
 
             let first_value = 0xEE;
             let second_value = 0xDD;
@@ -926,7 +924,7 @@ mod tests {
             interpreter.handle_opcode(Opcode::AddRegisters(first_register, second_register));
             assert_eq!(interpreter.registers[first_register], 0xCB, "Addition with overflow failed.");
             assert_eq!(interpreter.registers[second_register], second_value, "Second register modified.");
-            assert_eq!(interpreter.register_f, true, "Overflow bit incorrectly not set.");
+            assert_eq!(interpreter.registers[REGISTER_F], 1, "Overflow bit incorrectly not set.");
         }
 
         #[test]
@@ -945,26 +943,26 @@ mod tests {
             interpreter.handle_opcode(Opcode::SubtractFromFirstRegister(first_register, second_register));
             assert_eq!(interpreter.registers[first_register], difference, "Basic subtraction failed.");
             assert_eq!(interpreter.registers[second_register], second_value, "Second register modified.");
-            assert_eq!(interpreter.register_f, false, "Borrow bit incorrectly set.");
+            assert_eq!(interpreter.registers[REGISTER_F], 0, "Borrow bit incorrectly set.");
 
             interpreter.registers[second_register] = third_value;
             interpreter.handle_opcode(Opcode::SubtractFromFirstRegister(first_register, second_register));
             assert_eq!(interpreter.registers[first_register], underflowing_difference, "Underflowing subtraction failed.");
             assert_eq!(interpreter.registers[second_register], third_value, "Second register modified.");
-            assert_eq!(interpreter.register_f, true, "Borrow bit incorrectly not set.");
+            assert_eq!(interpreter.registers[REGISTER_F], 1, "Borrow bit incorrectly not set.");
 
             interpreter.registers[second_register] = first_value;
             interpreter.registers[first_register] = second_value;
             interpreter.handle_opcode(Opcode::SubtractFromSecondRegister(first_register, second_register));
             assert_eq!(interpreter.registers[first_register], difference, "Basic subtraction failed.");
             assert_eq!(interpreter.registers[second_register], first_value, "Second register modified.");
-            assert_eq!(interpreter.register_f, false, "Borrow bit incorrectly set.");
+            assert_eq!(interpreter.registers[REGISTER_F], 0, "Borrow bit incorrectly set.");
 
             interpreter.registers[second_register] = third_value;
             interpreter.handle_opcode(Opcode::SubtractFromSecondRegister(second_register, first_register));
             assert_eq!(interpreter.registers[second_register], underflowing_difference, "Underflowing subtraction failed.");
             assert_eq!(interpreter.registers[first_register], difference, "First register modified.");
-            assert_eq!(interpreter.register_f, true, "Borrow bit incorrectly not set.");
+            assert_eq!(interpreter.registers[REGISTER_F], 1, "Borrow bit incorrectly not set.");
         }
 
         #[test]
@@ -976,11 +974,11 @@ mod tests {
             interpreter.registers[register] = value;
             interpreter.handle_opcode(Opcode::BitShiftRight(register));
             assert_eq!(interpreter.registers[register], value >> 1, "Bit shift right failed.");
-            assert_eq!(interpreter.register_f, false, "Shift bit incorrectly set");
+            assert_eq!(interpreter.registers[REGISTER_F], 0, "Shift bit incorrectly set");
 
             interpreter.handle_opcode(Opcode::BitShiftRight(register));
             assert_eq!(interpreter.registers[register], value >> 2, "Bit shift right failed.");
-            assert_eq!(interpreter.register_f, true, "Shift bit incorrectly not set");
+            assert_eq!(interpreter.registers[REGISTER_F], 1, "Shift bit incorrectly not set");
         }
 
         #[test]
@@ -992,11 +990,11 @@ mod tests {
             interpreter.registers[register] = value;
             interpreter.handle_opcode(Opcode::BitShiftLeft(register));
             assert_eq!(interpreter.registers[register], value << 1, "Bit shift left failed.");
-            assert_eq!(interpreter.register_f, true, "Shift bit incorrectly not set");
+            assert_eq!(interpreter.registers[REGISTER_F], 1, "Shift bit incorrectly not set");
 
             interpreter.handle_opcode(Opcode::BitShiftLeft(register));
             assert_eq!(interpreter.registers[register], value << 2, "Bit shift left failed.");
-            assert_eq!(interpreter.register_f, false, "Shift bit incorrectly set");
+            assert_eq!(interpreter.registers[REGISTER_F], 0, "Shift bit incorrectly set");
         }
 
         #[test]
@@ -1017,7 +1015,7 @@ mod tests {
         }
 
         #[test]
-        fn handle_call_addr_oppcode() {
+        fn handle_call_addr_opcode() {
             let mut interpreter = Interpreter::new();
 
             let original_program_counter = 0x7E2;

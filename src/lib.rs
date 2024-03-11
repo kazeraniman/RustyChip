@@ -18,7 +18,7 @@ pub fn run() -> Result<(), String> {
     let video_subsystem = sdl_context.video()?;
 
     // Create the window
-    let window = video_subsystem.window("RustyChip", 64 * 10, 32 * 10)
+    let window = video_subsystem.window("RustyChip", interpreter::SCALED_WIDTH, interpreter::SCALED_HEIGHT)
         .position_centered()
         .build()
         .map_err(|window_build_error| window_build_error.to_string())?;

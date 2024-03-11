@@ -284,14 +284,17 @@ impl<'a> Interpreter<'a> {
 
     fn or(&mut self, first_register: usize, second_register: usize) {
         self.registers[first_register] |= self.registers[second_register];
+        self.registers[REGISTER_F] = 0x0;
     }
 
     fn and(&mut self, first_register: usize, second_register: usize) {
         self.registers[first_register] &= self.registers[second_register];
+        self.registers[REGISTER_F] = 0x0;
     }
 
     fn xor(&mut self, first_register: usize, second_register: usize) {
         self.registers[first_register] ^= self.registers[second_register];
+        self.registers[REGISTER_F] = 0x0;
     }
 
     fn random(&mut self, register: usize, value: u8) {
@@ -741,9 +744,11 @@ mod tests {
             let second_value = 0xC3;
             interpreter.registers[first_register] = first_value;
             interpreter.registers[second_register] = second_value;
+            interpreter.registers[REGISTER_F] = 0x1;
             interpreter.handle_opcode(Opcode::Or(first_register, second_register));
             assert_eq!(interpreter.registers[first_register], first_value | second_value, "Bitwise OR not applied correctly.");
             assert_eq!(interpreter.registers[second_register], second_value, "Second register value modified.");
+            assert_eq!(interpreter.registers[REGISTER_F], 0x0, "Register F not reset.");
         }
 
         #[test]
@@ -756,9 +761,11 @@ mod tests {
             let second_value = 0xCC;
             interpreter.registers[first_register] = first_value;
             interpreter.registers[second_register] = second_value;
+            interpreter.registers[REGISTER_F] = 0x1;
             interpreter.handle_opcode(Opcode::And(first_register, second_register));
             assert_eq!(interpreter.registers[first_register], first_value & second_value, "Bitwise AND not applied correctly.");
             assert_eq!(interpreter.registers[second_register], second_value, "Second register value modified.");
+            assert_eq!(interpreter.registers[REGISTER_F], 0x0, "Register F not reset.");
         }
 
         #[test]
@@ -766,14 +773,16 @@ mod tests {
             let mut interpreter = Interpreter::new();
 
             let first_register = 0xB;
-            let second_register = 0xF;
+            let second_register = 0xE;
             let first_value = 0x33;
             let second_value = 0x55;
             interpreter.registers[first_register] = first_value;
             interpreter.registers[second_register] = second_value;
+            interpreter.registers[REGISTER_F] = 0x1;
             interpreter.handle_opcode(Opcode::Xor(first_register, second_register));
             assert_eq!(interpreter.registers[first_register], first_value ^ second_value, "Bitwise XOR not applied correctly.");
             assert_eq!(interpreter.registers[second_register], second_value, "Second register value modified.");
+            assert_eq!(interpreter.registers[REGISTER_F], 0x0, "Register F not reset.");
         }
 
         #[test]

@@ -20,7 +20,8 @@ Please keep in mind that this will result in a Linux-style for the window.
   - Copy all of the `.lib` files from `SDL2-devel-2.0.x-VC\SDL2-2.0.x\lib\x64\` to `C:\Users\{Your Username}\.rustup\toolchains\{current toolchain}\lib\rustlib\{current toolchain}\lib`.
 
 ## Running
-As expected, the standard `cargo` command are all that's necessary. To simply get it up and running, run `cargo run`.
+As expected, the standard `cargo` command are all that's necessary. To simply get it up and running, run `cargo run -- --help` to get an idea of the options available.  
+The simplest structure is `cargo run -- <path to the game file>`.
 
 ## Controls
 Aside from the actual game controls, you may close the window or press ESC to stop the emulator.

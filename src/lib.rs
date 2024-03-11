@@ -8,11 +8,9 @@ pub mod opcodes;
 pub mod interpreter;
 pub mod audio;
 
-const CYCLES_PER_FRAME: u32 = 20;
-
-pub fn run() -> Result<(), String> {
+pub fn run(path: String, cycles_per_frame: u32) -> Result<(), String> {
     // Read the game file
-    let game_file = read_game_file("games/INVADERS.chip8")
+    let game_file = read_game_file(&path)
         .map_err(|err| err.to_string())?;
 
     // Initialize SDL
@@ -74,7 +72,7 @@ pub fn run() -> Result<(), String> {
         }
 
         // Run the interpreter logic
-        for _ in 0..CYCLES_PER_FRAME {
+        for _ in 0..cycles_per_frame {
             interpreter.handle_cycle();
         }
 

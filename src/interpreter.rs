@@ -2,6 +2,9 @@ use std::collections::{HashSet};
 use rand::random;
 use sdl2::audio::AudioDevice;
 use sdl2::keyboard::Keycode;
+use sdl2::pixels::Color;
+use sdl2::rect::Rect;
+use sdl2::render::WindowCanvas;
 use crate::audio::SquareWave;
 use crate::opcodes::{Opcode, OpcodeBytes};
 
@@ -13,6 +16,7 @@ const MOST_SIGNIFICANT_BIT_MASK: u8 = 0x80;
 const SCREEN_WIDTH: u32 = 64;
 const SCREEN_HEIGHT: u32 = 32;
 const SCREEN_SCALE: u32 = 10;
+const DRAWING_BUFFER_SIZE: usize = (SCREEN_WIDTH * SCREEN_HEIGHT) as usize;
 pub const SCALED_WIDTH: u32 = SCREEN_WIDTH * SCREEN_SCALE;
 pub const SCALED_HEIGHT: u32 = SCREEN_HEIGHT * SCREEN_SCALE;
 const HEXADECIMAL_DIGIT_SPRITES: [u8; 80] = [
@@ -47,17 +51,19 @@ pub struct Interpreter<'a> {
     keyboard: HashSet<u8>,
     should_wait_for_key: bool,
     wait_for_key_register: usize,
-    audio_device: Option<&'a AudioDevice<SquareWave>>
+    drawing_buffer: [bool; DRAWING_BUFFER_SIZE],
+    audio_device: Option<&'a AudioDevice<SquareWave>>,
+    canvas: Option<&'a mut WindowCanvas>
 }
 
 impl<'a> Interpreter<'a> {
-    pub fn new_with_audio(audio_device: Option<&'a AudioDevice<SquareWave>>) -> Interpreter {
+    pub fn new_with_sdl(canvas: Option<&'a mut WindowCanvas>, audio_device: Option<&'a AudioDevice<SquareWave>>) -> Interpreter<'a> {
         let mut ram = [0; 4096];
         for i in 0..HEXADECIMAL_DIGIT_SPRITES.len() {
             ram[i] = HEXADECIMAL_DIGIT_SPRITES[i];
         }
 
-        Interpreter {
+        let mut interpreter = Interpreter {
             ram,
             registers: [0; 16],
             register_i: 0,
@@ -70,13 +76,19 @@ impl<'a> Interpreter<'a> {
             keyboard: HashSet::new(),
             should_wait_for_key: false,
             wait_for_key_register: 0,
+            drawing_buffer: [false; DRAWING_BUFFER_SIZE],
+            canvas,
             audio_device
-        }
+        };
+
+        interpreter.clear_screen();
+
+        interpreter
     }
 
     #[cfg(test)]
     fn new() -> Interpreter<'a> {
-        Self::new_with_audio(None)
+        Self::new_with_sdl(None, None)
     }
 
     pub fn load_game(&mut self, game_data: Vec<u8>) {
@@ -137,7 +149,32 @@ impl<'a> Interpreter<'a> {
         let opcode = opcode.get_opcode();
         self.program_counter += PROGRAM_COUNTER_INCREMENT;
         self.handle_opcode(opcode);
+    }
+
+    pub fn handle_frame(&mut self) {
         self.handle_timers();
+        if let Some(canvas) = self.canvas.as_mut() {
+            canvas.set_draw_color(Interpreter::get_bg_colour());
+            canvas.clear();
+
+            let mut pixels = Vec::new();
+            for (i, bit) in self.drawing_buffer.iter().enumerate() {
+                if !*bit {
+                    continue;
+                }
+
+                let x = (i as u32 % SCREEN_WIDTH) * SCREEN_SCALE;
+                let y = (i as u32 / SCREEN_WIDTH) * SCREEN_SCALE;
+                pixels.push(Rect::new(x as i32, y as i32, SCREEN_SCALE, SCREEN_SCALE))
+            }
+
+            canvas.set_draw_color(Interpreter::get_fg_colour());
+            if let Err(e) = canvas.fill_rects(&pixels) {
+                eprintln!("Error drawing: {e}");
+            }
+
+            canvas.present();
+        }
     }
 
     fn handle_timers(&mut self) {
@@ -156,9 +193,17 @@ impl<'a> Interpreter<'a> {
         }
     }
 
+    fn get_bg_colour() -> Color {
+        Color::RGB(0x0, 0x0, 0x0)
+    }
+
+    fn get_fg_colour() -> Color {
+        Color::RGB(0x0, 0xFF, 0x0)
+    }
+
     fn handle_opcode(&mut self, opcode: Opcode) {
         match opcode {
-            Opcode::ClearScreen => {}
+            Opcode::ClearScreen => self.clear_screen(),
             Opcode::Return => self.return_from_subroutine(),
             Opcode::JumpAddr(address) => self.jump_addr(address),
             Opcode::SystemAddr(address) | Opcode::CallAddr(address) => self.call_addr(address),
@@ -180,7 +225,7 @@ impl<'a> Interpreter<'a> {
             Opcode::LoadRegisterI(address) => self.load_register_i(address),
             Opcode::JumpAddrV0(address) => self.jump_address_v0(address),
             Opcode::Random(register, value) => self.random(register, value),
-            Opcode::Draw(_, _, _) => {}
+            Opcode::Draw(first_register, second_register, length) => self.draw(first_register, second_register, length),
             Opcode::SkipKeyPressed(register) => self.skip_key_pressed(register),
             Opcode::SkipKeyNotPressed(register) => self.skip_key_not_pressed(register),
             Opcode::LoadDelayTimer(register) => self.load_delay_timer(register),
@@ -353,6 +398,38 @@ impl<'a> Interpreter<'a> {
     fn load_key_press(&mut self, register: usize) {
         self.should_wait_for_key = true;
         self.wait_for_key_register = register;
+    }
+
+    fn clear_screen(&mut self) {
+        self.drawing_buffer.fill(false);
+        if let Some(canvas) = self.canvas.as_mut() {
+            canvas.set_draw_color(Interpreter::get_bg_colour());
+            canvas.clear();
+        }
+    }
+
+    fn draw(&mut self, first_register: usize, second_register: usize, length: u8) {
+        let base_x = self.registers[first_register];
+        let base_y = self.registers[second_register];
+        self.register_f = false;
+
+        for i in 0..length {
+            let sprite_byte = self.ram[(self.register_i + i as u16) as usize];
+            let buffer_y = (base_y + i) as u32 % SCREEN_HEIGHT;
+            for j in 0..8 {
+                let target_bit = (sprite_byte >> (7 - j)) & 1;
+                let buffer_x = (base_x + j) as u32 % SCREEN_WIDTH;
+                let drawing_buffer_index = (buffer_y * SCREEN_WIDTH + buffer_x) as usize;
+                let display_bit = self.drawing_buffer[drawing_buffer_index];
+
+                if display_bit && target_bit == 0 {
+                    self.register_f = true;
+                }
+
+                let is_set = display_bit ^ (target_bit == 1);
+                self.drawing_buffer[drawing_buffer_index] = is_set;
+            }
+        }
     }
 }
 

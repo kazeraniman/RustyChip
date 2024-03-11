@@ -1,5 +1,5 @@
 use std::{io, fs, time::Duration};
-use sdl2::{pixels::Color, event::Event, keyboard::Keycode};
+use sdl2::{event::Event, keyboard::Keycode};
 use interpreter::Interpreter;
 use sdl2::audio::{AudioSpecDesired};
 use audio::SquareWave;
@@ -7,6 +7,8 @@ use audio::SquareWave;
 pub mod opcodes;
 pub mod interpreter;
 pub mod audio;
+
+const CYCLES_PER_FRAME: u32 = 20;
 
 pub fn run() -> Result<(), String> {
     // Read the game file
@@ -27,9 +29,6 @@ pub fn run() -> Result<(), String> {
     let mut canvas = window.into_canvas()
         .build()
         .map_err(|integer_or_sdl_error| integer_or_sdl_error.to_string())?;
-    canvas.set_draw_color(Color::RGB(0, 0, 0));
-    canvas.clear();
-    canvas.present();
 
     // Prepare the audio
     // Mostly taken from the example provided by the crate
@@ -52,7 +51,7 @@ pub fn run() -> Result<(), String> {
     let mut event_pump = sdl_context.event_pump()?;
 
     // Prepare the emulator
-    let mut interpreter = Interpreter::new_with_audio(Some(&audio_device));
+    let mut interpreter = Interpreter::new_with_sdl(Some(&mut canvas), Some(&audio_device));
     interpreter.load_game(game_file);
 
     // The main game loop
@@ -72,7 +71,12 @@ pub fn run() -> Result<(), String> {
         }
 
         // Run the interpreter logic
-        interpreter.handle_cycle();
+        for _ in 0..CYCLES_PER_FRAME {
+            interpreter.handle_cycle();
+        }
+
+        // Draw the frame
+        interpreter.handle_frame();
 
         // Wait the requisite time for the next iteration. Effectively sets it to 60fps / 60Hz.
         std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));

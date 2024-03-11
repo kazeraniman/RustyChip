@@ -8,7 +8,7 @@ Since I developed this on Windows using WSL and RustRover, there were two ways t
 ### WSL
 Please keep in mind that this will result in a Linux-style for the window.
 - Set RustRover to use the WSL toolchain and standard library.
-- Follow [the instructions]() for Linux.
+- Follow [the instructions](https://crates.io/crates/sdl2#user-content-linux) for Linux.
   - Run `sudo apt-get install libsdl2-dev` to get the libraries needed.
     - You can also copy the files yourself to the toolchain folder but this is nicer.
 

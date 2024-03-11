@@ -1,23 +1,24 @@
 use std::{io, fs, time::Duration};
 use sdl2::{pixels::Color, event::Event, keyboard::Keycode};
 use interpreter::Interpreter;
+use sdl2::audio::{AudioSpecDesired};
+use audio::SquareWave;
 
 pub mod opcodes;
 pub mod interpreter;
+pub mod audio;
 
 pub fn run() -> Result<(), String> {
-    // Create the emulator and load the game
+    // Read the game file
     let game_file = read_game_file("games/INVADERS.chip8")
         .map_err(|err| err.to_string())?;
-    let mut interpreter = Interpreter::new();
-    interpreter.load_game(game_file);
 
     // Initialize SDL
     let sdl_context = sdl2::init()?;
     let video_subsystem = sdl_context.video()?;
 
     // Create the window
-    let window = video_subsystem.window("RustyChip", 800, 600)
+    let window = video_subsystem.window("RustyChip", 64 * 10, 32 * 10)
         .position_centered()
         .build()
         .map_err(|window_build_error| window_build_error.to_string())?;
@@ -30,8 +31,29 @@ pub fn run() -> Result<(), String> {
     canvas.clear();
     canvas.present();
 
+    // Prepare the audio
+    // Mostly taken from the example provided by the crate
+    let audio_subsystem = sdl_context.audio()?;
+    let desired_spec = AudioSpecDesired {
+        freq: Some(44100),
+        channels: Some(1),  // mono
+        samples: None       // default sample size
+    };
+    let audio_device = audio_subsystem.open_playback(None, &desired_spec, |spec| {
+        // initialize the audio callback
+        SquareWave {
+            phase_inc: 440.0 / spec.freq as f32,
+            phase: 0.0,
+            volume: 0.25
+        }
+    })?;
+
     // Prepare for events
     let mut event_pump = sdl_context.event_pump()?;
+
+    // Prepare the emulator
+    let mut interpreter = Interpreter::new_with_audio(Some(&audio_device));
+    interpreter.load_game(game_file);
 
     // The main game loop
     'game_loop: loop {

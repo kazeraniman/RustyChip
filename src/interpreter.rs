@@ -1,6 +1,8 @@
 use std::collections::{HashSet};
 use rand::random;
+use sdl2::audio::AudioDevice;
 use sdl2::keyboard::Keycode;
+use crate::audio::SquareWave;
 use crate::opcodes::{Opcode, OpcodeBytes};
 
 const PROGRAM_START_ADDRESS: u16 = 0x200;
@@ -27,7 +29,7 @@ const HEXADECIMAL_DIGIT_SPRITES: [u8; 80] = [
     0xF0, 0x80, 0xF0, 0x80, 0x80
 ];
 
-pub struct Interpreter {
+pub struct Interpreter<'a> {
     ram: [u8; 4096],
     registers: [u8; 16],
     register_i: u16,
@@ -39,11 +41,12 @@ pub struct Interpreter {
     stack: [u16; 16],
     keyboard: HashSet<u8>,
     should_wait_for_key: bool,
-    wait_for_key_register: usize
+    wait_for_key_register: usize,
+    audio_device: Option<&'a AudioDevice<SquareWave>>
 }
 
-impl Interpreter {
-    pub fn new() -> Interpreter {
+impl<'a> Interpreter<'a> {
+    pub fn new_with_audio(audio_device: Option<&'a AudioDevice<SquareWave>>) -> Interpreter {
         let mut ram = [0; 4096];
         for i in 0..HEXADECIMAL_DIGIT_SPRITES.len() {
             ram[i] = HEXADECIMAL_DIGIT_SPRITES[i];
@@ -61,8 +64,14 @@ impl Interpreter {
             stack: [0; 16],
             keyboard: HashSet::new(),
             should_wait_for_key: false,
-            wait_for_key_register: 0
+            wait_for_key_register: 0,
+            audio_device
         }
+    }
+
+    #[cfg(test)]
+    fn new() -> Interpreter<'a> {
+        Self::new_with_audio(None)
     }
 
     pub fn load_game(&mut self, game_data: Vec<u8>) {
@@ -127,8 +136,19 @@ impl Interpreter {
     }
 
     fn handle_timers(&mut self) {
+        let old_sound_timer = self.sound_timer;
         self.sound_timer = self.sound_timer.saturating_sub(1);
         self.delay_timer = self.delay_timer.saturating_sub(1);
+
+        if old_sound_timer != 0 && self.sound_timer == 0 {
+            self.set_audio_status();
+        }
+    }
+
+    fn set_audio_status(&self) {
+        if let Some(audio_device) = self.audio_device {
+            if self.sound_timer > 0 { audio_device.resume() } else { audio_device.pause() };
+        }
     }
 
     fn handle_opcode(&mut self, opcode: Opcode) {
@@ -259,6 +279,7 @@ impl Interpreter {
 
     fn set_sound_timer(&mut self, register: usize) {
         self.sound_timer = self.registers[register];
+        self.set_audio_status();
     }
 
     fn add_register_i(&mut self, register: usize) {

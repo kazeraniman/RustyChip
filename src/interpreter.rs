@@ -484,14 +484,10 @@ mod tests {
         interpreter.ram[program_start_usize + 1] = 0xAA;
         interpreter.ram[program_start_usize + 2] = 0x1B;
         interpreter.ram[program_start_usize + 3] = 0xBB;
-        interpreter.delay_timer = 0x1;
-        interpreter.sound_timer = 0x1;
         interpreter.program_counter = PROGRAM_START_ADDRESS;
         interpreter.handle_cycle();
         assert_eq!(interpreter.register_i, 0xAAA, "Opcode not handled.");
         assert_eq!(interpreter.program_counter, PROGRAM_START_ADDRESS + PROGRAM_COUNTER_INCREMENT, "Program counter not incremented.");
-        assert_eq!(interpreter.delay_timer, 0x0, "Delay timer not decremented.");
-        assert_eq!(interpreter.sound_timer, 0x0, "Sound timer not decremented.");
 
         interpreter.handle_cycle();
         assert_eq!(interpreter.program_counter, 0xBBB, "Program counter incremented after jump.");
@@ -518,6 +514,11 @@ mod tests {
         interpreter.handle_timers();
         assert_eq!(interpreter.delay_timer, 0x0, "Delay timer not saturated at 0.");
         assert_eq!(interpreter.sound_timer, 0x0, "Sound timer not saturated at 0.");
+    }
+
+    #[test]
+    fn handle_frame() {
+        todo!();
     }
 
     #[test]
@@ -1142,6 +1143,16 @@ mod tests {
             assert_eq!(interpreter.program_counter, PROGRAM_START_ADDRESS + PROGRAM_COUNTER_INCREMENT, "Program counter not incremented.");
             assert!(!interpreter.should_wait_for_key, "Waiting for key press.");
             assert_eq!(interpreter.registers[register], 0x4, "Wrong key loaded into register.");
+        }
+
+        #[test]
+        fn handle_clear_screen_opcode() {
+            todo!();
+        }
+
+        #[test]
+        fn handle_draw_opcode() {
+            todo!();
         }
     }
 }

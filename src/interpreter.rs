@@ -345,7 +345,7 @@ impl<'a> Interpreter<'a> {
 
     fn bounded_subtraction(&mut self, minuend_register: usize, subtrahend_register: usize, result_register: usize) {
         let (difference, did_underflow) = self.registers[minuend_register].overflowing_sub(self.registers[subtrahend_register]);
-        self.registers[REGISTER_F] = if did_underflow { 1 } else { 0 };
+        self.registers[REGISTER_F] = if !did_underflow { 1 } else { 0 };
         self.registers[result_register] = difference;
     }
 
@@ -950,25 +950,32 @@ mod tests {
             interpreter.handle_opcode(Opcode::SubtractFromFirstRegister(first_register, second_register));
             assert_eq!(interpreter.registers[first_register], difference, "Basic subtraction failed.");
             assert_eq!(interpreter.registers[second_register], second_value, "Second register modified.");
-            assert_eq!(interpreter.registers[REGISTER_F], 0, "Borrow bit incorrectly set.");
+            assert_eq!(interpreter.registers[REGISTER_F], 1, "Borrow bit incorrectly not set.");
 
             interpreter.registers[second_register] = third_value;
             interpreter.handle_opcode(Opcode::SubtractFromFirstRegister(first_register, second_register));
             assert_eq!(interpreter.registers[first_register], underflowing_difference, "Underflowing subtraction failed.");
             assert_eq!(interpreter.registers[second_register], third_value, "Second register modified.");
-            assert_eq!(interpreter.registers[REGISTER_F], 1, "Borrow bit incorrectly not set.");
+            assert_eq!(interpreter.registers[REGISTER_F], 0, "Borrow bit incorrectly set.");
 
             interpreter.registers[second_register] = first_value;
             interpreter.registers[first_register] = second_value;
             interpreter.handle_opcode(Opcode::SubtractFromSecondRegister(first_register, second_register));
             assert_eq!(interpreter.registers[first_register], difference, "Basic subtraction failed.");
             assert_eq!(interpreter.registers[second_register], first_value, "Second register modified.");
-            assert_eq!(interpreter.registers[REGISTER_F], 0, "Borrow bit incorrectly set.");
+            assert_eq!(interpreter.registers[REGISTER_F], 1, "Borrow bit incorrectly not set.");
 
             interpreter.registers[second_register] = third_value;
             interpreter.handle_opcode(Opcode::SubtractFromSecondRegister(second_register, first_register));
             assert_eq!(interpreter.registers[second_register], underflowing_difference, "Underflowing subtraction failed.");
             assert_eq!(interpreter.registers[first_register], difference, "First register modified.");
+            assert_eq!(interpreter.registers[REGISTER_F], 0, "Borrow bit incorrectly set.");
+
+            interpreter.registers[first_register] = third_value;
+            interpreter.registers[second_register] = third_value;
+            interpreter.handle_opcode(Opcode::SubtractFromSecondRegister(second_register, first_register));
+            assert_eq!(interpreter.registers[second_register], 0x0, "Zero-result subtraction failed.");
+            assert_eq!(interpreter.registers[first_register], third_value, "First register modified.");
             assert_eq!(interpreter.registers[REGISTER_F], 1, "Borrow bit incorrectly not set.");
         }
 

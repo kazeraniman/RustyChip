@@ -20,7 +20,7 @@ Please keep in mind that this will result in a Linux-style for the window.
   - Copy all of the `.lib` files from `SDL2-devel-2.0.x-VC\SDL2-2.0.x\lib\x64\` to `C:\Users\{Your Username}\.rustup\toolchains\{current toolchain}\lib\rustlib\{current toolchain}\lib`.
 
 ## Running
-As expected, the standard `cargo` commands are all that's necessary. Run `cargo run -- --help` to get an idea of the options available. This is especially true due to all the quirk flags available. For more information on quirks, please see [the testing suite](#testing-suite) section.  
+As expected, the standard `cargo` commands are all that's necessary. Run `cargo run -- --help` to get an idea of the options available. This is especially true due to all the quirk flags available. Please note that different games will work/not work depending on the quirk combinations. I have picked the default options based on the expectations in the testing suite. For more information on quirks, please see [the testing suite](#testing-suite) section.  
 The simplest structure is `cargo run -- <path to the game file>`.
 
 ## Controls
@@ -56,3 +56,5 @@ Aside from my own tests, I used [Timendus' chip8-test-suite](https://github.com/
 [Wikipedia CHIP-8 Page](https://en.wikipedia.org/wiki/CHIP-8)   
 [Cowgod's CHIP-8 Technical Reference](http://devernay.free.fr/hacks/chip8/C8TECH10.HTM)
 
+## Assorted Thoughts
+- I could have used a config file rather than command line arguments and it would have been cleaner but I wanted to get a feel for how command line arguments can be done with `clap` as it seems like a useful crate moving forward.

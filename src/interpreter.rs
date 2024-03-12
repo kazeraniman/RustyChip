@@ -406,14 +406,22 @@ impl<'a> Interpreter<'a> {
     }
 
     fn bit_shift_right(&mut self, first_register: usize, second_register: usize) {
-        let will_bit_run_off = if (self.registers[second_register] & LEAST_SIGNIFICANT_BIT_MASK) == 0x1 { 1 } else { 0 };
-        self.registers[first_register] = self.registers[second_register] >> 0x1;
+        let target_shift_register = match self.quirk_shifting {
+            ShiftingQuirk::Vy => second_register,
+            ShiftingQuirk::Vx => first_register
+        };
+        let will_bit_run_off = if (self.registers[target_shift_register] & LEAST_SIGNIFICANT_BIT_MASK) == 0x1 { 1 } else { 0 };
+        self.registers[first_register] = self.registers[target_shift_register] >> 0x1;
         self.registers[REGISTER_F] = will_bit_run_off;
     }
 
     fn bit_shift_left(&mut self, first_register: usize, second_register: usize) {
-        let will_bit_run_off = if ((self.registers[second_register] & MOST_SIGNIFICANT_BIT_MASK) >> 7) == 0x1 { 1 } else { 0 };
-        self.registers[first_register] = self.registers[second_register] << 0x1;
+        let target_shift_register = match self.quirk_shifting {
+            ShiftingQuirk::Vy => second_register,
+            ShiftingQuirk::Vx => first_register
+        };
+        let will_bit_run_off = if ((self.registers[target_shift_register] & MOST_SIGNIFICANT_BIT_MASK) >> 7) == 0x1 { 1 } else { 0 };
+        self.registers[first_register] = self.registers[target_shift_register] << 0x1;
         self.registers[REGISTER_F] = will_bit_run_off;
     }
 
@@ -747,6 +755,40 @@ mod tests {
         assert_eq!(no_wait_interpreter.wait_for_display_refresh_data, (0x0, 0x0, 0x0), "Data set to wait for display refresh.");
         assert!(!wait_interpreter.drawing_buffer[0], "Data drawn to buffer.");
         assert!(no_wait_interpreter.drawing_buffer[0], "Data not drawn to buffer.");
+    }
+
+    #[test]
+    fn shifting_quirk() {
+        let mut vy_shift_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::default(), DisplayWaitQuirk::default(), ClippingQuirk::default(), ShiftingQuirk::Vy, JumpingQuirk::default());
+        let mut vx_shift_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::default(), DisplayWaitQuirk::default(), ClippingQuirk::default(), ShiftingQuirk::Vx, JumpingQuirk::default());
+
+        let first_register = 0x0;
+        let second_register = 0x1;
+        let first_value = 0xAA;
+        let second_value = 0xF0;
+        vy_shift_interpreter.registers[first_register] = first_value;
+        vy_shift_interpreter.registers[second_register] = second_value;
+        vx_shift_interpreter.registers[first_register] = first_value;
+        vx_shift_interpreter.registers[second_register] = second_value;
+        vy_shift_interpreter.handle_opcode(Opcode::BitShiftLeft(first_register, second_register));
+        vx_shift_interpreter.handle_opcode(Opcode::BitShiftLeft(first_register, second_register));
+        assert_eq!(vy_shift_interpreter.registers[first_register], second_value << 1, "Left shift not performed correctly.");
+        assert_eq!(vy_shift_interpreter.registers[second_register], second_value, "Second register modified.");
+        assert_eq!(vy_shift_interpreter.registers[REGISTER_F], 0x1, "Register F not set.");
+        assert_eq!(vx_shift_interpreter.registers[first_register], first_value << 1, "Left shift not performed correctly.");
+        assert_eq!(vx_shift_interpreter.registers[second_register], second_value, "Second register modified.");
+        assert_eq!(vx_shift_interpreter.registers[REGISTER_F], 0x1, "Register F not set.");
+
+        vy_shift_interpreter.registers[first_register] = first_value;
+        vx_shift_interpreter.registers[first_register] = first_value;
+        vy_shift_interpreter.handle_opcode(Opcode::BitShiftRight(first_register, second_register));
+        vx_shift_interpreter.handle_opcode(Opcode::BitShiftRight(first_register, second_register));
+        assert_eq!(vy_shift_interpreter.registers[first_register], second_value >> 1, "Left shift not performed correctly.");
+        assert_eq!(vy_shift_interpreter.registers[second_register], second_value, "Second register modified.");
+        assert_eq!(vy_shift_interpreter.registers[REGISTER_F], 0x0, "Register F not set.");
+        assert_eq!(vx_shift_interpreter.registers[first_register], first_value >> 1, "Left shift not performed correctly.");
+        assert_eq!(vx_shift_interpreter.registers[second_register], second_value, "Second register modified.");
+        assert_eq!(vx_shift_interpreter.registers[REGISTER_F], 0x0, "Register F not set.");
     }
 
     #[cfg(test)]

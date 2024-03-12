@@ -372,7 +372,11 @@ impl<'a> Interpreter<'a> {
     }
 
     fn jump_address_v0(&mut self, address: u16) {
-        self.jump_addr(address + self.registers[0] as u16);
+        let target_register = match self.quirk_jumping {
+            JumpingQuirk::V0 => 0,
+            JumpingQuirk::Vx => (address & 0xF00) >> 0x8
+        };
+        self.jump_addr(address + self.registers[target_register as usize] as u16);
     }
 
     fn load_delay_timer(&mut self, register: usize) {
@@ -691,157 +695,184 @@ mod tests {
         assert_eq!(interpreter.keyboard.len(), 0, "Wrong number of key presses stored.");
     }
 
-    #[test]
-    fn reset_quirk() {
-        let mut reset_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::Reset, MemoryIncrementQuirk::default(), DisplayWaitQuirk::default(), ClippingQuirk::default(), ShiftingQuirk::default(), JumpingQuirk::default());
-        let mut no_reset_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::NoReset, MemoryIncrementQuirk::default(), DisplayWaitQuirk::default(), ClippingQuirk::default(), ShiftingQuirk::default(), JumpingQuirk::default());
+    #[cfg(test)]
+    mod quirk_tests {
+        use crate::opcodes::Opcode::JumpAddrV0;
+        use super::*;
 
-        let first_register = 0x0;
-        let second_register = 0x1;
-        let first_value = 0xAA;
-        let second_value = 0xF0;
-        reset_interpreter.registers[first_register] = first_value;
-        reset_interpreter.registers[second_register] = second_value;
-        reset_interpreter.registers[REGISTER_F] = 0x1;
-        no_reset_interpreter.registers[first_register] = first_value;
-        no_reset_interpreter.registers[second_register] = second_value;
-        no_reset_interpreter.registers[REGISTER_F] = 0x1;
-        reset_interpreter.handle_opcode(Opcode::And(first_register, second_register));
-        no_reset_interpreter.handle_opcode(Opcode::And(first_register, second_register));
-        assert_eq!(reset_interpreter.registers[REGISTER_F], 0x0, "Register F not reset.");
-        assert_eq!(no_reset_interpreter.registers[REGISTER_F], 0x1, "Register F reset.");
+        #[test]
+        fn reset_quirk() {
+            let mut reset_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::Reset, MemoryIncrementQuirk::default(), DisplayWaitQuirk::default(), ClippingQuirk::default(), ShiftingQuirk::default(), JumpingQuirk::default());
+            let mut no_reset_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::NoReset, MemoryIncrementQuirk::default(), DisplayWaitQuirk::default(), ClippingQuirk::default(), ShiftingQuirk::default(), JumpingQuirk::default());
 
-        reset_interpreter.registers[REGISTER_F] = 0x1;
-        no_reset_interpreter.registers[REGISTER_F] = 0x1;
-        reset_interpreter.handle_opcode(Opcode::Or(first_register, second_register));
-        no_reset_interpreter.handle_opcode(Opcode::Or(first_register, second_register));
-        assert_eq!(reset_interpreter.registers[REGISTER_F], 0x0, "Register F not reset.");
-        assert_eq!(no_reset_interpreter.registers[REGISTER_F], 0x1, "Register F reset.");
+            let first_register = 0x0;
+            let second_register = 0x1;
+            let first_value = 0xAA;
+            let second_value = 0xF0;
+            reset_interpreter.registers[first_register] = first_value;
+            reset_interpreter.registers[second_register] = second_value;
+            reset_interpreter.registers[REGISTER_F] = 0x1;
+            no_reset_interpreter.registers[first_register] = first_value;
+            no_reset_interpreter.registers[second_register] = second_value;
+            no_reset_interpreter.registers[REGISTER_F] = 0x1;
+            reset_interpreter.handle_opcode(Opcode::And(first_register, second_register));
+            no_reset_interpreter.handle_opcode(Opcode::And(first_register, second_register));
+            assert_eq!(reset_interpreter.registers[REGISTER_F], 0x0, "Register F not reset.");
+            assert_eq!(no_reset_interpreter.registers[REGISTER_F], 0x1, "Register F reset.");
 
-        reset_interpreter.registers[REGISTER_F] = 0x1;
-        no_reset_interpreter.registers[REGISTER_F] = 0x1;
-        reset_interpreter.handle_opcode(Opcode::Xor(first_register, second_register));
-        no_reset_interpreter.handle_opcode(Opcode::Xor(first_register, second_register));
-        assert_eq!(reset_interpreter.registers[REGISTER_F], 0x0, "Register F not reset.");
-        assert_eq!(no_reset_interpreter.registers[REGISTER_F], 0x1, "Register F reset.");
-    }
+            reset_interpreter.registers[REGISTER_F] = 0x1;
+            no_reset_interpreter.registers[REGISTER_F] = 0x1;
+            reset_interpreter.handle_opcode(Opcode::Or(first_register, second_register));
+            no_reset_interpreter.handle_opcode(Opcode::Or(first_register, second_register));
+            assert_eq!(reset_interpreter.registers[REGISTER_F], 0x0, "Register F not reset.");
+            assert_eq!(no_reset_interpreter.registers[REGISTER_F], 0x1, "Register F reset.");
 
-    #[test]
-    fn memory_quirk() {
-        let mut increment_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::Increment, DisplayWaitQuirk::default(), ClippingQuirk::default(), ShiftingQuirk::default(), JumpingQuirk::default());
-        let mut no_increment_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::NoIncrement, DisplayWaitQuirk::default(), ClippingQuirk::default(), ShiftingQuirk::default(), JumpingQuirk::default());
-
-        let register_values = &[0x32, 0xBC, 0x12, 0xFF, 0x74];
-        let register = 0x4;
-        let starting_address = 0x834;
-        increment_interpreter.register_i = starting_address;
-        no_increment_interpreter.register_i = starting_address;
-        for i in 0..=register {
-            increment_interpreter.registers[i] = register_values[i];
-            no_increment_interpreter.registers[i] = register_values[i];
+            reset_interpreter.registers[REGISTER_F] = 0x1;
+            no_reset_interpreter.registers[REGISTER_F] = 0x1;
+            reset_interpreter.handle_opcode(Opcode::Xor(first_register, second_register));
+            no_reset_interpreter.handle_opcode(Opcode::Xor(first_register, second_register));
+            assert_eq!(reset_interpreter.registers[REGISTER_F], 0x0, "Register F not reset.");
+            assert_eq!(no_reset_interpreter.registers[REGISTER_F], 0x1, "Register F reset.");
         }
 
-        increment_interpreter.handle_opcode(Opcode::StoreRegisters(register));
-        no_increment_interpreter.handle_opcode(Opcode::StoreRegisters(register));
+        #[test]
+        fn memory_quirk() {
+            let mut increment_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::Increment, DisplayWaitQuirk::default(), ClippingQuirk::default(), ShiftingQuirk::default(), JumpingQuirk::default());
+            let mut no_increment_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::NoIncrement, DisplayWaitQuirk::default(), ClippingQuirk::default(), ShiftingQuirk::default(), JumpingQuirk::default());
 
-        assert_eq!(increment_interpreter.register_i, starting_address + register as u16 + 1, "Register I value not incremented.");
-        assert_eq!(no_increment_interpreter.register_i, starting_address, "Register I value incremented.");
-    }
+            let register_values = &[0x32, 0xBC, 0x12, 0xFF, 0x74];
+            let register = 0x4;
+            let starting_address = 0x834;
+            increment_interpreter.register_i = starting_address;
+            no_increment_interpreter.register_i = starting_address;
+            for i in 0..=register {
+                increment_interpreter.registers[i] = register_values[i];
+                no_increment_interpreter.registers[i] = register_values[i];
+            }
 
-    #[test]
-    fn display_wait_quirk() {
-        let mut wait_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::default(), DisplayWaitQuirk::Wait, ClippingQuirk::default(), ShiftingQuirk::default(), JumpingQuirk::default());
-        let mut no_wait_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::default(), DisplayWaitQuirk::NoWait, ClippingQuirk::default(), ShiftingQuirk::default(), JumpingQuirk::default());
+            increment_interpreter.handle_opcode(Opcode::StoreRegisters(register));
+            no_increment_interpreter.handle_opcode(Opcode::StoreRegisters(register));
 
-        let first_register = 0x0;
-        let second_register = 0x1;
-        let sprite = 0xAA;
-        let sprite_location = 0x999;
-        wait_interpreter.register_i = sprite_location;
-        no_wait_interpreter.register_i = sprite_location;
-        wait_interpreter.ram[sprite_location as usize] = sprite;
-        no_wait_interpreter.ram[sprite_location as usize] = sprite;
-        wait_interpreter.handle_opcode(Opcode::Draw(first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH));
-        no_wait_interpreter.handle_opcode(Opcode::Draw(first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH));
-        assert!(wait_interpreter.should_wait_for_display_refresh, "Not waiting for display refresh.");
-        assert!(!no_wait_interpreter.should_wait_for_display_refresh, "Waiting for display refresh.");
-        assert_eq!(wait_interpreter.wait_for_display_refresh_data, (first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH), "Wrong data set to wait for display refresh.");
-        assert_eq!(no_wait_interpreter.wait_for_display_refresh_data, (0x0, 0x0, 0x0), "Data set to wait for display refresh.");
-        assert!(!wait_interpreter.drawing_buffer[0], "Data drawn to buffer.");
-        assert!(no_wait_interpreter.drawing_buffer[0], "Data not drawn to buffer.");
-    }
+            assert_eq!(increment_interpreter.register_i, starting_address + register as u16 + 1, "Register I value not incremented.");
+            assert_eq!(no_increment_interpreter.register_i, starting_address, "Register I value incremented.");
+        }
 
-    #[test]
-    fn shifting_quirk() {
-        let mut vy_shift_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::default(), DisplayWaitQuirk::default(), ClippingQuirk::default(), ShiftingQuirk::Vy, JumpingQuirk::default());
-        let mut vx_shift_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::default(), DisplayWaitQuirk::default(), ClippingQuirk::default(), ShiftingQuirk::Vx, JumpingQuirk::default());
+        #[test]
+        fn display_wait_quirk() {
+            let mut wait_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::default(), DisplayWaitQuirk::Wait, ClippingQuirk::default(), ShiftingQuirk::default(), JumpingQuirk::default());
+            let mut no_wait_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::default(), DisplayWaitQuirk::NoWait, ClippingQuirk::default(), ShiftingQuirk::default(), JumpingQuirk::default());
 
-        let first_register = 0x0;
-        let second_register = 0x1;
-        let first_value = 0xAA;
-        let second_value = 0xF0;
-        vy_shift_interpreter.registers[first_register] = first_value;
-        vy_shift_interpreter.registers[second_register] = second_value;
-        vx_shift_interpreter.registers[first_register] = first_value;
-        vx_shift_interpreter.registers[second_register] = second_value;
-        vy_shift_interpreter.handle_opcode(Opcode::BitShiftLeft(first_register, second_register));
-        vx_shift_interpreter.handle_opcode(Opcode::BitShiftLeft(first_register, second_register));
-        assert_eq!(vy_shift_interpreter.registers[first_register], second_value << 1, "Left shift not performed correctly.");
-        assert_eq!(vy_shift_interpreter.registers[second_register], second_value, "Second register modified.");
-        assert_eq!(vy_shift_interpreter.registers[REGISTER_F], 0x1, "Register F not set.");
-        assert_eq!(vx_shift_interpreter.registers[first_register], first_value << 1, "Left shift not performed correctly.");
-        assert_eq!(vx_shift_interpreter.registers[second_register], second_value, "Second register modified.");
-        assert_eq!(vx_shift_interpreter.registers[REGISTER_F], 0x1, "Register F not set.");
+            let first_register = 0x0;
+            let second_register = 0x1;
+            let sprite = 0xAA;
+            let sprite_location = 0x999;
+            wait_interpreter.register_i = sprite_location;
+            no_wait_interpreter.register_i = sprite_location;
+            wait_interpreter.ram[sprite_location as usize] = sprite;
+            no_wait_interpreter.ram[sprite_location as usize] = sprite;
+            wait_interpreter.handle_opcode(Opcode::Draw(first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH));
+            no_wait_interpreter.handle_opcode(Opcode::Draw(first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH));
+            assert!(wait_interpreter.should_wait_for_display_refresh, "Not waiting for display refresh.");
+            assert!(!no_wait_interpreter.should_wait_for_display_refresh, "Waiting for display refresh.");
+            assert_eq!(wait_interpreter.wait_for_display_refresh_data, (first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH), "Wrong data set to wait for display refresh.");
+            assert_eq!(no_wait_interpreter.wait_for_display_refresh_data, (0x0, 0x0, 0x0), "Data set to wait for display refresh.");
+            assert!(!wait_interpreter.drawing_buffer[0], "Data drawn to buffer.");
+            assert!(no_wait_interpreter.drawing_buffer[0], "Data not drawn to buffer.");
+        }
 
-        vy_shift_interpreter.registers[first_register] = first_value;
-        vx_shift_interpreter.registers[first_register] = first_value;
-        vy_shift_interpreter.handle_opcode(Opcode::BitShiftRight(first_register, second_register));
-        vx_shift_interpreter.handle_opcode(Opcode::BitShiftRight(first_register, second_register));
-        assert_eq!(vy_shift_interpreter.registers[first_register], second_value >> 1, "Left shift not performed correctly.");
-        assert_eq!(vy_shift_interpreter.registers[second_register], second_value, "Second register modified.");
-        assert_eq!(vy_shift_interpreter.registers[REGISTER_F], 0x0, "Register F not set.");
-        assert_eq!(vx_shift_interpreter.registers[first_register], first_value >> 1, "Left shift not performed correctly.");
-        assert_eq!(vx_shift_interpreter.registers[second_register], second_value, "Second register modified.");
-        assert_eq!(vx_shift_interpreter.registers[REGISTER_F], 0x0, "Register F not set.");
-    }
+        #[test]
+        fn shifting_quirk() {
+            let mut vy_shift_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::default(), DisplayWaitQuirk::default(), ClippingQuirk::default(), ShiftingQuirk::Vy, JumpingQuirk::default());
+            let mut vx_shift_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::default(), DisplayWaitQuirk::default(), ClippingQuirk::default(), ShiftingQuirk::Vx, JumpingQuirk::default());
 
-    #[test]
-    fn clipping_quirk() {
-        let mut clip_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::default(), DisplayWaitQuirk::default(), ClippingQuirk::Clip, ShiftingQuirk::default(), JumpingQuirk::default());
-        let mut wrap_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::default(), DisplayWaitQuirk::default(), ClippingQuirk::Wrap, ShiftingQuirk::default(), JumpingQuirk::default());
+            let first_register = 0x0;
+            let second_register = 0x1;
+            let first_value = 0xAA;
+            let second_value = 0xF0;
+            vy_shift_interpreter.registers[first_register] = first_value;
+            vy_shift_interpreter.registers[second_register] = second_value;
+            vx_shift_interpreter.registers[first_register] = first_value;
+            vx_shift_interpreter.registers[second_register] = second_value;
+            vy_shift_interpreter.handle_opcode(Opcode::BitShiftLeft(first_register, second_register));
+            vx_shift_interpreter.handle_opcode(Opcode::BitShiftLeft(first_register, second_register));
+            assert_eq!(vy_shift_interpreter.registers[first_register], second_value << 1, "Left shift not performed correctly.");
+            assert_eq!(vy_shift_interpreter.registers[second_register], second_value, "Second register modified.");
+            assert_eq!(vy_shift_interpreter.registers[REGISTER_F], 0x1, "Register F not set.");
+            assert_eq!(vx_shift_interpreter.registers[first_register], first_value << 1, "Left shift not performed correctly.");
+            assert_eq!(vx_shift_interpreter.registers[second_register], second_value, "Second register modified.");
+            assert_eq!(vx_shift_interpreter.registers[REGISTER_F], 0x1, "Register F not set.");
 
-        let first_register = 0x0;
-        let second_register = 0x1;
-        let first_value = (SCREEN_WIDTH - 1) as u8;
-        let second_value = (SCREEN_HEIGHT - 1) as u8;
-        let sprite = 0xFF;
-        let sprite_height = 0x2;
-        let start_address = 0x888;
-        let start_address_usize = start_address as usize;
-        clip_interpreter.registers[first_register] = first_value;
-        clip_interpreter.registers[second_register] = second_value;
-        clip_interpreter.register_i = start_address;
-        clip_interpreter.ram[start_address_usize] = sprite;
-        clip_interpreter.ram[start_address_usize + 1] = sprite;
-        wrap_interpreter.registers[first_register] = first_value;
-        wrap_interpreter.registers[second_register] = second_value;
-        wrap_interpreter.register_i = start_address;
-        wrap_interpreter.ram[start_address_usize] = sprite;
-        wrap_interpreter.ram[start_address_usize + 1] = sprite;
-        clip_interpreter.complete_draw(first_register, second_register, sprite_height);
-        wrap_interpreter.complete_draw(first_register, second_register, sprite_height);
+            vy_shift_interpreter.registers[first_register] = first_value;
+            vx_shift_interpreter.registers[first_register] = first_value;
+            vy_shift_interpreter.handle_opcode(Opcode::BitShiftRight(first_register, second_register));
+            vx_shift_interpreter.handle_opcode(Opcode::BitShiftRight(first_register, second_register));
+            assert_eq!(vy_shift_interpreter.registers[first_register], second_value >> 1, "Left shift not performed correctly.");
+            assert_eq!(vy_shift_interpreter.registers[second_register], second_value, "Second register modified.");
+            assert_eq!(vy_shift_interpreter.registers[REGISTER_F], 0x0, "Register F not set.");
+            assert_eq!(vx_shift_interpreter.registers[first_register], first_value >> 1, "Left shift not performed correctly.");
+            assert_eq!(vx_shift_interpreter.registers[second_register], second_value, "Second register modified.");
+            assert_eq!(vx_shift_interpreter.registers[REGISTER_F], 0x0, "Register F not set.");
+        }
 
-        assert!(clip_interpreter.drawing_buffer[DRAWING_BUFFER_SIZE - 1], "Pre-clip sprite not drawn.");
-        assert!(wrap_interpreter.drawing_buffer[DRAWING_BUFFER_SIZE - 1], "Pre-wrap sprite not drawn.");
-        assert!(!clip_interpreter.drawing_buffer[SCREEN_WIDTH as usize - 1], "Sprite did not clip on the Y axis.");
-        assert!(wrap_interpreter.drawing_buffer[SCREEN_WIDTH as usize - 1], "Sprite did not wrap around on the Y axis.");
+        #[test]
+        fn clipping_quirk() {
+            let mut wrap_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::default(), DisplayWaitQuirk::default(), ClippingQuirk::Wrap, ShiftingQuirk::default(), JumpingQuirk::default());
+            let mut clip_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::default(), DisplayWaitQuirk::default(), ClippingQuirk::Clip, ShiftingQuirk::default(), JumpingQuirk::default());
 
-        let bottom_row = ((SCREEN_HEIGHT - 1) * SCREEN_WIDTH) as usize;
-        for x in 0..7 {
-            assert!(!clip_interpreter.drawing_buffer[x], "Sprite did not clip on the X and Y axes.");
-            assert!(wrap_interpreter.drawing_buffer[x], "Sprite did not wrap around on the X and Y axes.");
-            assert!(!clip_interpreter.drawing_buffer[bottom_row + x], "Sprite did not clip on the X axis.");
-            assert!(wrap_interpreter.drawing_buffer[bottom_row + x], "Sprite did not wrap around on the X axis.");
+            let first_register = 0x0;
+            let second_register = 0x1;
+            let first_value = (SCREEN_WIDTH - 1) as u8;
+            let second_value = (SCREEN_HEIGHT - 1) as u8;
+            let sprite = 0xFF;
+            let sprite_height = 0x2;
+            let start_address = 0x888;
+            let start_address_usize = start_address as usize;
+            clip_interpreter.registers[first_register] = first_value;
+            clip_interpreter.registers[second_register] = second_value;
+            clip_interpreter.register_i = start_address;
+            clip_interpreter.ram[start_address_usize] = sprite;
+            clip_interpreter.ram[start_address_usize + 1] = sprite;
+            wrap_interpreter.registers[first_register] = first_value;
+            wrap_interpreter.registers[second_register] = second_value;
+            wrap_interpreter.register_i = start_address;
+            wrap_interpreter.ram[start_address_usize] = sprite;
+            wrap_interpreter.ram[start_address_usize + 1] = sprite;
+            clip_interpreter.complete_draw(first_register, second_register, sprite_height);
+            wrap_interpreter.complete_draw(first_register, second_register, sprite_height);
+
+            assert!(clip_interpreter.drawing_buffer[DRAWING_BUFFER_SIZE - 1], "Pre-clip sprite not drawn.");
+            assert!(wrap_interpreter.drawing_buffer[DRAWING_BUFFER_SIZE - 1], "Pre-wrap sprite not drawn.");
+            assert!(!clip_interpreter.drawing_buffer[SCREEN_WIDTH as usize - 1], "Sprite did not clip on the Y axis.");
+            assert!(wrap_interpreter.drawing_buffer[SCREEN_WIDTH as usize - 1], "Sprite did not wrap around on the Y axis.");
+
+            let bottom_row = ((SCREEN_HEIGHT - 1) * SCREEN_WIDTH) as usize;
+            for x in 0..7 {
+                assert!(!clip_interpreter.drawing_buffer[x], "Sprite did not clip on the X and Y axes.");
+                assert!(wrap_interpreter.drawing_buffer[x], "Sprite did not wrap around on the X and Y axes.");
+                assert!(!clip_interpreter.drawing_buffer[bottom_row + x], "Sprite did not clip on the X axis.");
+                assert!(wrap_interpreter.drawing_buffer[bottom_row + x], "Sprite did not wrap around on the X axis.");
+            }
+        }
+
+        #[test]
+        fn jumping_quirk() {
+            let mut v0_jump_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::default(), DisplayWaitQuirk::default(), ClippingQuirk::default(), ShiftingQuirk::default(), JumpingQuirk::V0);
+            let mut vx_jump_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::default(), DisplayWaitQuirk::default(), ClippingQuirk::default(), ShiftingQuirk::default(), JumpingQuirk::Vx);
+
+            let first_register = 0x0;
+            let second_register = 0x5;
+            let first_value = 0xA;
+            let second_value = 0x6;
+            let address = 0x543;
+            v0_jump_interpreter.registers[first_register] = first_value;
+            v0_jump_interpreter.registers[second_register] = second_value;
+            vx_jump_interpreter.registers[first_register] = first_value;
+            vx_jump_interpreter.registers[second_register] = second_value;
+            v0_jump_interpreter.handle_opcode(JumpAddrV0(address));
+            vx_jump_interpreter.handle_opcode(JumpAddrV0(address));
+
+            assert_eq!(v0_jump_interpreter.program_counter, address + first_value as u16, "Jumped to value in wrong register.");
+            assert_eq!(vx_jump_interpreter.program_counter, address + second_value as u16, "Jumped to value in wrong register.");
         }
     }
 

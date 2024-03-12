@@ -430,20 +430,28 @@ impl<'a> Interpreter<'a> {
     }
 
     fn complete_draw(&mut self, first_register: usize, second_register: usize, length: u8) {
-        let base_x = self.registers[first_register];
-        let base_y = self.registers[second_register];
+        let base_x = self.registers[first_register] as u32 % SCREEN_WIDTH;
+        let base_y = self.registers[second_register] as u32 % SCREEN_HEIGHT;
         self.registers[REGISTER_F] = 0;
 
         for i in 0..length {
+            let buffer_y = base_y + i as u32;
+            if buffer_y >= SCREEN_HEIGHT {
+                continue;
+            }
+
             let sprite_byte = self.ram[(self.register_i + i as u16) as usize];
-            let buffer_y = (base_y + i) as u32 % SCREEN_HEIGHT;
             for j in 0..8 {
+                let buffer_x = base_x + j;
+                if buffer_x >= SCREEN_WIDTH {
+                    continue;
+                }
+
                 let target_bit = (sprite_byte >> (7 - j)) & 1;
-                let buffer_x = (base_x + j) as u32 % SCREEN_WIDTH;
                 let drawing_buffer_index = (buffer_y * SCREEN_WIDTH + buffer_x) as usize;
                 let display_bit = self.drawing_buffer[drawing_buffer_index];
 
-                if display_bit && target_bit == 0 {
+                if display_bit && target_bit == 1 {
                     self.registers[REGISTER_F] = 1;
                 }
 
@@ -1303,7 +1311,7 @@ mod tests {
                 }
             }
 
-            // Draw a sprite that wraps around the screen
+            // Draw a sprite that clips at the edge of the screen
             let first_value = 20;
             let second_value = (SCREEN_HEIGHT - 1) as u8;
             interpreter.registers[first_register] = first_value;
@@ -1312,8 +1320,24 @@ mod tests {
             assert_eq!(interpreter.registers[REGISTER_F], 0x0, "Collision bit incorrectly set.");
             for i in 0..HEXADECIMAL_DIGIT_SPRITE_LENGTH as usize {
                 for j in 0..8 {
-                    let kek = ram_values[i];
-                    assert_eq!(interpreter.drawing_buffer[(((i + second_value as usize) * SCREEN_WIDTH as usize) + first_value as usize + j) % DRAWING_BUFFER_SIZE], ((kek >> (7 - j)) & 1) == 0x1, "Wrapping drawn value is incorrect.");
+                    let drawing_buffer_index = ((i + second_value as usize) * SCREEN_WIDTH as usize) + first_value as usize + j;
+                    let target_value = if drawing_buffer_index >= DRAWING_BUFFER_SIZE { false } else { ((ram_values[i] >> (7 - j)) & 1) == 0x1 };
+                    assert_eq!(interpreter.drawing_buffer[drawing_buffer_index % DRAWING_BUFFER_SIZE], target_value, "Clipping drawn value is incorrect.");
+                }
+            }
+
+            // Draw a sprite that wraps around the edge of the screen
+            let first_value = SCREEN_WIDTH as u8;
+            let second_value = 10;
+            interpreter.registers[first_register] = first_value;
+            interpreter.registers[second_register] = second_value;
+            interpreter.complete_draw(first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH);
+            assert_eq!(interpreter.registers[REGISTER_F], 0x0, "Collision bit incorrectly set.");
+            for i in 0..HEXADECIMAL_DIGIT_SPRITE_LENGTH as usize {
+                for j in 0..8 {
+                    let drawing_buffer_index = ((i + second_value as usize) * SCREEN_WIDTH as usize) + (first_value % SCREEN_WIDTH as u8) as usize + j;
+                    let target_value = ((ram_values[i] >> (7 - j)) & 1) == 0x1;
+                    assert_eq!(interpreter.drawing_buffer[drawing_buffer_index], target_value, "Wrapping drawn value is incorrect.");
                 }
             }
 
@@ -1335,6 +1359,20 @@ mod tests {
                     assert_eq!(interpreter.drawing_buffer[i * SCREEN_WIDTH as usize + j], (sprite_one_bit ^ sprite_two_bit) == 0x1, "Overlapping drawn value is incorrect.");
                 }
             }
+
+            // Draw a simple colliding sprite to ensure the collision bit is set correctly
+            let first_value = 0xA;
+            let second_value = 0x0;
+            interpreter.registers[first_register] = first_value;
+            interpreter.registers[second_register] = second_value;
+            interpreter.ram[0xCCC] = 0xFF;
+            interpreter.register_i = 0xCCC;
+            interpreter.registers[REGISTER_F] = 0x0;
+            interpreter.complete_draw(first_register, second_register, 1);
+            assert_eq!(interpreter.registers[REGISTER_F], 0x0, "Collision bit incorrectly not set.");
+
+            interpreter.complete_draw(first_register, second_register, 1);
+            assert_eq!(interpreter.registers[REGISTER_F], 0x1, "Collision bit incorrectly not set.");
         }
     }
 }

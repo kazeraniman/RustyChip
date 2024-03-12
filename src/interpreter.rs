@@ -485,16 +485,30 @@ impl<'a> Interpreter<'a> {
         self.registers[REGISTER_F] = 0;
 
         for i in 0..length {
-            let buffer_y = base_y + i as u32;
-            if buffer_y >= SCREEN_HEIGHT {
-                continue;
+            let mut buffer_y = base_y + i as u32;
+            match self.quirk_clipping {
+                ClippingQuirk::Clip => {
+                    if buffer_y >= SCREEN_HEIGHT {
+                        continue;
+                    }
+                }
+                ClippingQuirk::Wrap => {
+                    buffer_y %= SCREEN_HEIGHT;
+                }
             }
 
             let sprite_byte = self.ram[(self.register_i + i as u16) as usize];
             for j in 0..8 {
-                let buffer_x = base_x + j;
-                if buffer_x >= SCREEN_WIDTH {
-                    continue;
+                let mut buffer_x = base_x + j;
+                match self.quirk_clipping {
+                    ClippingQuirk::Clip => {
+                        if buffer_x >= SCREEN_WIDTH {
+                            continue;
+                        }
+                    }
+                    ClippingQuirk::Wrap => {
+                        buffer_x %= SCREEN_WIDTH;
+                    }
                 }
 
                 let target_bit = (sprite_byte >> (7 - j)) & 1;
@@ -789,6 +803,46 @@ mod tests {
         assert_eq!(vx_shift_interpreter.registers[first_register], first_value >> 1, "Left shift not performed correctly.");
         assert_eq!(vx_shift_interpreter.registers[second_register], second_value, "Second register modified.");
         assert_eq!(vx_shift_interpreter.registers[REGISTER_F], 0x0, "Register F not set.");
+    }
+
+    #[test]
+    fn clipping_quirk() {
+        let mut clip_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::default(), DisplayWaitQuirk::default(), ClippingQuirk::Clip, ShiftingQuirk::default(), JumpingQuirk::default());
+        let mut wrap_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::default(), DisplayWaitQuirk::default(), ClippingQuirk::Wrap, ShiftingQuirk::default(), JumpingQuirk::default());
+
+        let first_register = 0x0;
+        let second_register = 0x1;
+        let first_value = (SCREEN_WIDTH - 1) as u8;
+        let second_value = (SCREEN_HEIGHT - 1) as u8;
+        let sprite = 0xFF;
+        let sprite_height = 0x2;
+        let start_address = 0x888;
+        let start_address_usize = start_address as usize;
+        clip_interpreter.registers[first_register] = first_value;
+        clip_interpreter.registers[second_register] = second_value;
+        clip_interpreter.register_i = start_address;
+        clip_interpreter.ram[start_address_usize] = sprite;
+        clip_interpreter.ram[start_address_usize + 1] = sprite;
+        wrap_interpreter.registers[first_register] = first_value;
+        wrap_interpreter.registers[second_register] = second_value;
+        wrap_interpreter.register_i = start_address;
+        wrap_interpreter.ram[start_address_usize] = sprite;
+        wrap_interpreter.ram[start_address_usize + 1] = sprite;
+        clip_interpreter.complete_draw(first_register, second_register, sprite_height);
+        wrap_interpreter.complete_draw(first_register, second_register, sprite_height);
+
+        assert!(clip_interpreter.drawing_buffer[DRAWING_BUFFER_SIZE - 1], "Pre-clip sprite not drawn.");
+        assert!(wrap_interpreter.drawing_buffer[DRAWING_BUFFER_SIZE - 1], "Pre-wrap sprite not drawn.");
+        assert!(!clip_interpreter.drawing_buffer[SCREEN_WIDTH as usize - 1], "Sprite did not clip on the Y axis.");
+        assert!(wrap_interpreter.drawing_buffer[SCREEN_WIDTH as usize - 1], "Sprite did not wrap around on the Y axis.");
+
+        let bottom_row = ((SCREEN_HEIGHT - 1) * SCREEN_WIDTH) as usize;
+        for x in 0..7 {
+            assert!(!clip_interpreter.drawing_buffer[x], "Sprite did not clip on the X and Y axes.");
+            assert!(wrap_interpreter.drawing_buffer[x], "Sprite did not wrap around on the X and Y axes.");
+            assert!(!clip_interpreter.drawing_buffer[bottom_row + x], "Sprite did not clip on the X axis.");
+            assert!(wrap_interpreter.drawing_buffer[bottom_row + x], "Sprite did not wrap around on the X axis.");
+        }
     }
 
     #[cfg(test)]

@@ -355,13 +355,15 @@ impl<'a> Interpreter<'a> {
     }
 
     fn bit_shift_right(&mut self, first_register: usize, second_register: usize) {
-        self.registers[REGISTER_F] = if (self.registers[second_register] & LEAST_SIGNIFICANT_BIT_MASK) == 0x1 { 1 } else { 0 };
+        let will_bit_run_off = if (self.registers[second_register] & LEAST_SIGNIFICANT_BIT_MASK) == 0x1 { 1 } else { 0 };
         self.registers[first_register] = self.registers[second_register] >> 0x1;
+        self.registers[REGISTER_F] = will_bit_run_off;
     }
 
     fn bit_shift_left(&mut self, first_register: usize, second_register: usize) {
-        self.registers[REGISTER_F] = if ((self.registers[second_register] & MOST_SIGNIFICANT_BIT_MASK) >> 7) == 0x1 { 1 } else { 0 };
+        let will_bit_run_off = if ((self.registers[second_register] & MOST_SIGNIFICANT_BIT_MASK) >> 7) == 0x1 { 1 } else { 0 };
         self.registers[first_register] = self.registers[second_register] << 0x1;
+        self.registers[REGISTER_F] = will_bit_run_off;
     }
 
     fn binary_coded_decimal(&mut self, register: usize) {
@@ -1060,6 +1062,10 @@ mod tests {
             assert_eq!(interpreter.registers[first_register], value >> 2, "Bit shift right failed.");
             assert_eq!(interpreter.registers[second_register], value >> 1, "Second register modified.");
             assert_eq!(interpreter.registers[REGISTER_F], 1, "Shift bit incorrectly not set");
+
+            interpreter.handle_opcode(Opcode::BitShiftRight(REGISTER_F, second_register));
+            assert_eq!(interpreter.registers[second_register], value >> 1, "Second register modified.");
+            assert_eq!(interpreter.registers[REGISTER_F], 1, "Shift bit incorrectly set");
         }
 
         #[test]
@@ -1078,6 +1084,10 @@ mod tests {
             interpreter.registers[second_register] = interpreter.registers[first_register];
             interpreter.handle_opcode(Opcode::BitShiftLeft(first_register, second_register));
             assert_eq!(interpreter.registers[first_register], value << 2, "Bit shift left failed.");
+            assert_eq!(interpreter.registers[second_register], value << 1, "Second register modified.");
+            assert_eq!(interpreter.registers[REGISTER_F], 0, "Shift bit incorrectly set");
+
+            interpreter.handle_opcode(Opcode::BitShiftLeft(REGISTER_F, second_register));
             assert_eq!(interpreter.registers[second_register], value << 1, "Second register modified.");
             assert_eq!(interpreter.registers[REGISTER_F], 0, "Shift bit incorrectly set");
         }

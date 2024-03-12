@@ -1,13 +1,15 @@
-use std::collections::{HashSet};
+use std::collections::HashSet;
+
 use rand::random;
 use sdl2::audio::AudioDevice;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use sdl2::render::WindowCanvas;
+
 use crate::audio::SquareWave;
 use crate::opcodes::{Opcode, OpcodeBytes};
-use crate::quirks::{ResetVfQuirk, MemoryIncrementQuirk, DisplayWaitQuirk, ClippingQuirk, ShiftingQuirk, JumpingQuirk};
+use crate::quirks::{ClippingQuirk, DisplayWaitQuirk, JumpingQuirk, MemoryIncrementQuirk, QuirkConfig, ResetVfQuirk, ShiftingQuirk};
 
 const PROGRAM_START_ADDRESS: u16 = 0x200;
 const PROGRAM_COUNTER_INCREMENT: u16 = 0x2;
@@ -58,20 +60,13 @@ pub struct Interpreter<'a> {
     drawing_buffer: [bool; DRAWING_BUFFER_SIZE],
     audio_device: Option<&'a AudioDevice<SquareWave>>,
     canvas: Option<&'a mut WindowCanvas>,
-    quirk_reset_vf: ResetVfQuirk,
-    quirk_memory: MemoryIncrementQuirk,
-    quirk_display_wait: DisplayWaitQuirk,
-    quirk_clipping: ClippingQuirk,
-    quirk_shifting: ShiftingQuirk,
-    quirk_jumping: JumpingQuirk
+    quirk_config: QuirkConfig
 }
 
 impl<'a> Interpreter<'a> {
-    pub fn new_with_sdl(canvas: Option<&'a mut WindowCanvas>, audio_device: Option<&'a AudioDevice<SquareWave>>, quirk_reset_vf: ResetVfQuirk, quirk_memory: MemoryIncrementQuirk, quirk_display_wait: DisplayWaitQuirk, quirk_clipping: ClippingQuirk, quirk_shifting: ShiftingQuirk, quirk_jumping: JumpingQuirk) -> Interpreter<'a> {
+    pub fn new_with_sdl(canvas: Option<&'a mut WindowCanvas>, audio_device: Option<&'a AudioDevice<SquareWave>>, quirk_config: QuirkConfig) -> Interpreter<'a> {
         let mut ram = [0; 4096];
-        for i in 0..HEXADECIMAL_DIGIT_SPRITES.len() {
-            ram[i] = HEXADECIMAL_DIGIT_SPRITES[i];
-        }
+        ram[..HEXADECIMAL_DIGIT_SPRITES.len()].copy_from_slice(&HEXADECIMAL_DIGIT_SPRITES[..]);
 
         let mut interpreter = Interpreter {
             ram,
@@ -90,12 +85,7 @@ impl<'a> Interpreter<'a> {
             drawing_buffer: [false; DRAWING_BUFFER_SIZE],
             canvas,
             audio_device,
-            quirk_reset_vf,
-            quirk_memory,
-            quirk_display_wait,
-            quirk_clipping,
-            quirk_shifting,
-            quirk_jumping
+            quirk_config
         };
 
         interpreter.clear_screen();
@@ -105,10 +95,10 @@ impl<'a> Interpreter<'a> {
 
     #[cfg(test)]
     fn new() -> Interpreter<'a> {
-        Self::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::default(), DisplayWaitQuirk::default(), ClippingQuirk::default(), ShiftingQuirk::default(), JumpingQuirk::default())
+        Self::new_with_sdl(None, None, QuirkConfig::new())
     }
 
-    pub fn load_game(&mut self, game_data: Vec<u8>) {
+    pub fn load_game(&mut self, game_data: &[u8]) {
         for (i, byte) in game_data.iter().enumerate() {
             self.ram[PROGRAM_START_ADDRESS as usize + i] = *byte;
         }
@@ -226,14 +216,14 @@ impl<'a> Interpreter<'a> {
     }
 
     fn handle_reset_quirk(&mut self) {
-        match self.quirk_reset_vf {
+        match self.quirk_config.reset_vf {
             ResetVfQuirk::Reset => { self.registers[REGISTER_F] = 0x0; }
             ResetVfQuirk::NoReset => {}
         }
     }
 
     fn handle_memory_increment_quirk(&mut self) {
-        match self.quirk_memory {
+        match self.quirk_config.memory {
             MemoryIncrementQuirk::Increment => { self.register_i += 1; }
             MemoryIncrementQuirk::NoIncrement => {}
         }
@@ -264,7 +254,7 @@ impl<'a> Interpreter<'a> {
             Opcode::JumpAddrV0(address) => self.jump_address_v0(address),
             Opcode::Random(register, value) => self.random(register, value),
             Opcode::Draw(first_register, second_register, length) => {
-                match self.quirk_display_wait {
+                match self.quirk_config.display_wait {
                     DisplayWaitQuirk::Wait => self.draw(first_register, second_register, length),
                     DisplayWaitQuirk::NoWait => self.complete_draw(first_register, second_register, length)
                 }
@@ -345,7 +335,7 @@ impl<'a> Interpreter<'a> {
 
     fn store_registers(&mut self, register: usize) {
         for i in 0..=register {
-            let index_adjustment = match self.quirk_memory {
+            let index_adjustment = match self.quirk_config.memory {
                 MemoryIncrementQuirk::Increment => 0,
                 MemoryIncrementQuirk::NoIncrement => i
             };
@@ -357,7 +347,7 @@ impl<'a> Interpreter<'a> {
 
     fn load_registers(&mut self, register: usize) {
         for i in 0..=register {
-            let index_adjustment = match self.quirk_memory {
+            let index_adjustment = match self.quirk_config.memory {
                 MemoryIncrementQuirk::Increment => 0,
                 MemoryIncrementQuirk::NoIncrement => i
             };
@@ -372,7 +362,7 @@ impl<'a> Interpreter<'a> {
     }
 
     fn jump_address_v0(&mut self, address: u16) {
-        let target_register = match self.quirk_jumping {
+        let target_register = match self.quirk_config.jumping {
             JumpingQuirk::V0 => 0,
             JumpingQuirk::Vx => (address & 0xF00) >> 0x8
         };
@@ -410,7 +400,7 @@ impl<'a> Interpreter<'a> {
     }
 
     fn bit_shift_right(&mut self, first_register: usize, second_register: usize) {
-        let target_shift_register = match self.quirk_shifting {
+        let target_shift_register = match self.quirk_config.shifting {
             ShiftingQuirk::Vy => second_register,
             ShiftingQuirk::Vx => first_register
         };
@@ -420,7 +410,7 @@ impl<'a> Interpreter<'a> {
     }
 
     fn bit_shift_left(&mut self, first_register: usize, second_register: usize) {
-        let target_shift_register = match self.quirk_shifting {
+        let target_shift_register = match self.quirk_config.shifting {
             ShiftingQuirk::Vy => second_register,
             ShiftingQuirk::Vx => first_register
         };
@@ -490,7 +480,7 @@ impl<'a> Interpreter<'a> {
 
         for i in 0..length {
             let mut buffer_y = base_y + i as u32;
-            match self.quirk_clipping {
+            match self.quirk_config.clipping {
                 ClippingQuirk::Clip => {
                     if buffer_y >= SCREEN_HEIGHT {
                         continue;
@@ -504,7 +494,7 @@ impl<'a> Interpreter<'a> {
             let sprite_byte = self.ram[(self.register_i + i as u16) as usize];
             for j in 0..8 {
                 let mut buffer_x = base_x + j;
-                match self.quirk_clipping {
+                match self.quirk_config.clipping {
                     ClippingQuirk::Clip => {
                         if buffer_x >= SCREEN_WIDTH {
                             continue;
@@ -545,6 +535,16 @@ mod tests {
         assert_eq!(interpreter.keyboard.len(), 0, "Keyboard initialized incorrectly.");
         assert!(!interpreter.should_wait_for_key, "Should wait for key initialized incorrectly.");
         assert_eq!(interpreter.wait_for_key_register, 0, "Wait for key register initialized incorrectly.");
+        assert!(!interpreter.should_wait_for_display_refresh, "Wait for display refresh initialized incorrectly.");
+        assert_eq!(interpreter.wait_for_display_refresh_data, (0x0, 0x0, 0x0), "Wait for display refresh data initialized incorrectly.");
+        assert!(interpreter.audio_device.is_none(), "Audio device initialized incorrectly (for tests).");
+        assert!(interpreter.canvas.is_none(), "Canvas initialized incorrectly (for tests).");
+        assert_eq!(interpreter.quirk_config.reset_vf, ResetVfQuirk::default(), "Reset quirk initialized incorrectly");
+        assert_eq!(interpreter.quirk_config.memory, MemoryIncrementQuirk::default(), "Memory increment quirk initialized incorrectly");
+        assert_eq!(interpreter.quirk_config.display_wait, DisplayWaitQuirk::default(), "Display wait quirk initialized incorrectly");
+        assert_eq!(interpreter.quirk_config.clipping, ClippingQuirk::default(), "Clipping quirk initialized incorrectly");
+        assert_eq!(interpreter.quirk_config.shifting, ShiftingQuirk::default(), "Shifting quirk initialized incorrectly");
+        assert_eq!(interpreter.quirk_config.jumping, JumpingQuirk::default(), "Jumping quirk initialized incorrectly");
 
         let hex_digit_sprite_length = HEXADECIMAL_DIGIT_SPRITES.len();
         for (i, byte) in interpreter.ram.iter().enumerate() {
@@ -558,6 +558,10 @@ mod tests {
         for address in interpreter.stack.iter() {
             assert_eq!(address, &0, "Stack initialized incorrectly.");
         }
+
+        for address in interpreter.drawing_buffer.iter() {
+            assert!(!address, "Drawing buffer initialized incorrectly.");
+        }
     }
 
     #[test]
@@ -565,7 +569,7 @@ mod tests {
         let mut interpreter = Interpreter::new();
 
         let fake_game_data = vec![0x23, 0x78, 0x93];
-        interpreter.load_game(fake_game_data.clone());
+        interpreter.load_game(&fake_game_data);
         for i in 0..fake_game_data.len() {
             assert_eq!(interpreter.ram[PROGRAM_START_ADDRESS as usize + i], fake_game_data[i], "Loaded game data does not match the original game data.");
         }
@@ -698,12 +702,17 @@ mod tests {
     #[cfg(test)]
     mod quirk_tests {
         use crate::opcodes::Opcode::JumpAddrV0;
+
         use super::*;
 
         #[test]
         fn reset_quirk() {
-            let mut reset_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::Reset, MemoryIncrementQuirk::default(), DisplayWaitQuirk::default(), ClippingQuirk::default(), ShiftingQuirk::default(), JumpingQuirk::default());
-            let mut no_reset_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::NoReset, MemoryIncrementQuirk::default(), DisplayWaitQuirk::default(), ClippingQuirk::default(), ShiftingQuirk::default(), JumpingQuirk::default());
+            let mut reset_quirk_config = QuirkConfig::new();
+            reset_quirk_config.reset_vf = ResetVfQuirk::Reset;
+            let mut no_reset_quirk_config = QuirkConfig::new();
+            no_reset_quirk_config.reset_vf = ResetVfQuirk::NoReset;
+            let mut reset_interpreter = Interpreter::new_with_sdl(None, None, reset_quirk_config);
+            let mut no_reset_interpreter = Interpreter::new_with_sdl(None, None, no_reset_quirk_config);
 
             let first_register = 0x0;
             let second_register = 0x1;
@@ -737,8 +746,12 @@ mod tests {
 
         #[test]
         fn memory_quirk() {
-            let mut increment_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::Increment, DisplayWaitQuirk::default(), ClippingQuirk::default(), ShiftingQuirk::default(), JumpingQuirk::default());
-            let mut no_increment_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::NoIncrement, DisplayWaitQuirk::default(), ClippingQuirk::default(), ShiftingQuirk::default(), JumpingQuirk::default());
+            let mut increment_quirk_config = QuirkConfig::new();
+            increment_quirk_config.memory = MemoryIncrementQuirk::Increment;
+            let mut no_increment_quirk_config = QuirkConfig::new();
+            no_increment_quirk_config.memory = MemoryIncrementQuirk::NoIncrement;
+            let mut increment_interpreter = Interpreter::new_with_sdl(None, None, increment_quirk_config);
+            let mut no_increment_interpreter = Interpreter::new_with_sdl(None, None, no_increment_quirk_config);
 
             let register_values = &[0x32, 0xBC, 0x12, 0xFF, 0x74];
             let register = 0x4;
@@ -759,8 +772,12 @@ mod tests {
 
         #[test]
         fn display_wait_quirk() {
-            let mut wait_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::default(), DisplayWaitQuirk::Wait, ClippingQuirk::default(), ShiftingQuirk::default(), JumpingQuirk::default());
-            let mut no_wait_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::default(), DisplayWaitQuirk::NoWait, ClippingQuirk::default(), ShiftingQuirk::default(), JumpingQuirk::default());
+            let mut wait_quirk_config = QuirkConfig::new();
+            wait_quirk_config.display_wait = DisplayWaitQuirk::Wait;
+            let mut no_wait_quirk_config = QuirkConfig::new();
+            no_wait_quirk_config.display_wait = DisplayWaitQuirk::NoWait;
+            let mut wait_interpreter = Interpreter::new_with_sdl(None, None, wait_quirk_config);
+            let mut no_wait_interpreter = Interpreter::new_with_sdl(None, None, no_wait_quirk_config);
 
             let first_register = 0x0;
             let second_register = 0x1;
@@ -782,8 +799,12 @@ mod tests {
 
         #[test]
         fn shifting_quirk() {
-            let mut vy_shift_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::default(), DisplayWaitQuirk::default(), ClippingQuirk::default(), ShiftingQuirk::Vy, JumpingQuirk::default());
-            let mut vx_shift_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::default(), DisplayWaitQuirk::default(), ClippingQuirk::default(), ShiftingQuirk::Vx, JumpingQuirk::default());
+            let mut vy_quirk_config = QuirkConfig::new();
+            vy_quirk_config.shifting = ShiftingQuirk::Vy;
+            let mut vx_quirk_config = QuirkConfig::new();
+            vx_quirk_config.shifting = ShiftingQuirk::Vx;
+            let mut vy_shift_interpreter = Interpreter::new_with_sdl(None, None, vy_quirk_config);
+            let mut vx_shift_interpreter = Interpreter::new_with_sdl(None, None, vx_quirk_config);
 
             let first_register = 0x0;
             let second_register = 0x1;
@@ -816,8 +837,12 @@ mod tests {
 
         #[test]
         fn clipping_quirk() {
-            let mut wrap_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::default(), DisplayWaitQuirk::default(), ClippingQuirk::Wrap, ShiftingQuirk::default(), JumpingQuirk::default());
-            let mut clip_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::default(), DisplayWaitQuirk::default(), ClippingQuirk::Clip, ShiftingQuirk::default(), JumpingQuirk::default());
+            let mut clipping_quirk_config = QuirkConfig::new();
+            clipping_quirk_config.clipping = ClippingQuirk::Clip;
+            let mut wrapping_quirk_config = QuirkConfig::new();
+            wrapping_quirk_config.clipping = ClippingQuirk::Wrap;
+            let mut clip_interpreter = Interpreter::new_with_sdl(None, None, clipping_quirk_config);
+            let mut wrap_interpreter = Interpreter::new_with_sdl(None, None, wrapping_quirk_config);
 
             let first_register = 0x0;
             let second_register = 0x1;
@@ -856,8 +881,12 @@ mod tests {
 
         #[test]
         fn jumping_quirk() {
-            let mut v0_jump_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::default(), DisplayWaitQuirk::default(), ClippingQuirk::default(), ShiftingQuirk::default(), JumpingQuirk::V0);
-            let mut vx_jump_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::default(), DisplayWaitQuirk::default(), ClippingQuirk::default(), ShiftingQuirk::default(), JumpingQuirk::Vx);
+            let mut v0_quirk_config = QuirkConfig::new();
+            v0_quirk_config.jumping = JumpingQuirk::V0;
+            let mut vx_quirk_config = QuirkConfig::new();
+            vx_quirk_config.jumping = JumpingQuirk::Vx;
+            let mut v0_jump_interpreter = Interpreter::new_with_sdl(None, None, v0_quirk_config);
+            let mut vx_jump_interpreter = Interpreter::new_with_sdl(None, None, vx_quirk_config);
 
             let first_register = 0x0;
             let second_register = 0x5;

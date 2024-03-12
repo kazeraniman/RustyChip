@@ -1,18 +1,29 @@
-use std::{io, fs, time::Duration};
+use std::{fs, io, time::Duration};
+
 use sdl2::{event::Event, keyboard::Keycode};
-use interpreter::Interpreter;
-use sdl2::audio::{AudioSpecDesired};
+use sdl2::audio::AudioSpecDesired;
+
 use audio::SquareWave;
-use crate::quirks::{ResetVfQuirk, MemoryIncrementQuirk, DisplayWaitQuirk, ClippingQuirk, ShiftingQuirk, JumpingQuirk};
+use interpreter::Interpreter;
+
+use crate::quirks::QuirkConfig;
 
 pub mod opcodes;
 pub mod interpreter;
 pub mod audio;
 pub mod quirks;
 
-pub fn run(path: String, cycles_per_frame: u32, quirk_reset_vf: ResetVfQuirk, quirk_memory: MemoryIncrementQuirk, quirk_display_wait: DisplayWaitQuirk, quirk_clipping: ClippingQuirk, quirk_shifting: ShiftingQuirk, quirk_jumping: JumpingQuirk) -> Result<(), String> {
+/// Runs the actual emulator.
+/// Returns either an `OK` signifying the process ended successfully or an `Err` containing a `String` which mentions the issue.
+///
+/// # Errors
+///
+/// Returns an `Err` if:
+/// * The game file cannot be found or read.
+/// * Any SDL system cannot be initialized.
+pub fn run(path: &str, cycles_per_frame: u32, quirk_config: QuirkConfig) -> Result<(), String> {
     // Read the game file
-    let game_file = read_game_file(&path)
+    let game_file = read_game_file(path)
         .map_err(|err| err.to_string())?;
 
     // Initialize SDL
@@ -41,6 +52,7 @@ pub fn run(path: String, cycles_per_frame: u32, quirk_reset_vf: ResetVfQuirk, qu
     let audio_device = audio_subsystem.open_playback(None, &desired_spec, |spec| {
         // initialize the audio callback
         SquareWave {
+            #[allow(clippy::cast_precision_loss)]
             phase_inc: 440.0 / spec.freq as f32,
             phase: 0.0,
             volume: 0.25
@@ -51,8 +63,8 @@ pub fn run(path: String, cycles_per_frame: u32, quirk_reset_vf: ResetVfQuirk, qu
     let mut event_pump = sdl_context.event_pump()?;
 
     // Prepare the emulator
-    let mut interpreter = Interpreter::new_with_sdl(Some(&mut canvas), Some(&audio_device), quirk_reset_vf, quirk_memory, quirk_display_wait, quirk_clipping, quirk_shifting, quirk_jumping);
-    interpreter.load_game(game_file);
+    let mut interpreter = Interpreter::new_with_sdl(Some(&mut canvas), Some(&audio_device), quirk_config);
+    interpreter.load_game(&game_file);
 
     // The main game loop
     'game_loop: loop {

@@ -1,6 +1,8 @@
 use std::process;
+
 use clap::Parser;
-use rusty_chip::quirks::{ResetVfQuirk, MemoryIncrementQuirk, DisplayWaitQuirk, ClippingQuirk, ShiftingQuirk, JumpingQuirk};
+
+use rusty_chip::quirks::{ClippingQuirk, DisplayWaitQuirk, JumpingQuirk, MemoryIncrementQuirk, QuirkConfig, ResetVfQuirk, ShiftingQuirk};
 
 const CYCLES_PER_FRAME: u32 = 10;
 
@@ -31,7 +33,16 @@ struct Cli {
 fn main() {
     let cli = Cli::parse();
 
-    if let Err(e) = rusty_chip::run(cli.game, cli.cycles_per_frame, cli.quirk_reset_vf, cli.quirk_memory, cli.quirk_display_wait, cli.quirk_clipping, cli.quirk_shifting, cli.quirk_jumping) {
+    let quirk_config = QuirkConfig {
+        reset_vf: cli.quirk_reset_vf,
+        memory: cli.quirk_memory,
+        display_wait: cli.quirk_display_wait,
+        clipping: cli.quirk_clipping,
+        shifting: cli.quirk_shifting,
+        jumping: cli.quirk_jumping,
+    };
+
+    if let Err(e) = rusty_chip::run(&cli.game, cli.cycles_per_frame, quirk_config) {
         eprintln!("Application error: {e}");
         process::exit(1);
     }

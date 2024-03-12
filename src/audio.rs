@@ -1,6 +1,6 @@
-//! This is taken from the example provided by the SDL2 crate.
-//! Minor modifications made for access from another file.
-//! Web-viewable documentation here: https://docs.rs/sdl2/latest/sdl2/audio/index.html
+//! This is taken from the example provided by the SDL2 crate.  
+//! Minor modifications made for access from another file.  
+//! Web-viewable documentation [here](https://docs.rs/sdl2/latest/sdl2/audio/index.html).
 
 use sdl2::audio::AudioCallback;
 

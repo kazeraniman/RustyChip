@@ -54,10 +54,19 @@ pub struct OpcodeBytes {
 }
 
 impl OpcodeBytes {
+    /// Returns an opcode-convertible structure from a slice of `u8`.
+    /// The resulting structure can be used to get a proper `Opcode`.
+    ///
+    /// # Arguments
+    ///
+    /// * `opcode_bytes` - A `u8` slice that holds the bytes necessary to form an opcode.
+    ///
+    /// # Panics
+    ///
+    /// Will panic if `opcode_bytes` does not have exactly 2 elements as 2 bytes make up a valid opcode.
+    #[must_use]
     pub fn build(opcode_bytes: &[u8]) -> OpcodeBytes {
-        if opcode_bytes.len() != 2 {
-            panic!("Improper opcode format: Opcodes must be two bytes.");
-        }
+        assert_eq!(opcode_bytes.len(), 2, "Improper opcode format: Opcodes must be two bytes.");
 
         OpcodeBytes {
             first_byte: opcode_bytes[0],
@@ -83,10 +92,17 @@ impl OpcodeBytes {
         Self::get_lower_nibble_u8(byte) as usize
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     fn get_addr(&self) -> u16 {
-        ((Self::get_lower_nibble(self.first_byte) as u16) << 8) + (self.second_byte as u16)
+        ((Self::get_lower_nibble(self.first_byte) as u16) << 8) + (u16::from(self.second_byte))
     }
 
+    /// Returns a proper `Opcode` with the data needed to handle it.
+    ///
+    /// # Panics
+    ///
+    /// Will panic if the opcode is not recognized as a valid one. See [wikipedia](https://en.wikipedia.org/wiki/CHIP-8#Opcode_table) for a list of valid opcodes.
+    #[must_use]
     pub fn get_opcode(&self) -> Opcode {
         let opcode_selection_info = (self.first_nibble, self.last_nibble, self.first_byte, self.second_byte);
         match opcode_selection_info {
@@ -125,7 +141,7 @@ impl OpcodeBytes {
             (0xF, _, _, 0x33) => Opcode::BinaryCodedDecimal(OpcodeBytes::get_lower_nibble(self.first_byte)),
             (0xF, _, _, 0x55) => Opcode::StoreRegisters(OpcodeBytes::get_lower_nibble(self.first_byte)),
             (0xF, _, _, 0x65) => Opcode::LoadRegisters(OpcodeBytes::get_lower_nibble(self.first_byte)),
-            _ => panic!("Unrecognized opcode: {}", self)
+            _ => panic!("Unrecognized opcode: {self}")
         }
     }
 }
@@ -184,7 +200,7 @@ mod tests {
     #[should_panic(expected = "Unrecognized opcode")]
     fn get_unrecognized_opcode() {
         let opcode_bytes = OpcodeBytes::build(&[0x51, 0xC7]);
-        opcode_bytes.get_opcode();
+        let _ = opcode_bytes.get_opcode();
     }
 
     #[test]

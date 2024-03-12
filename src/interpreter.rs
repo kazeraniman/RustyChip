@@ -232,6 +232,13 @@ impl<'a> Interpreter<'a> {
         }
     }
 
+    fn handle_memory_increment_quirk(&mut self) {
+        match self.quirk_memory {
+            MemoryIncrementQuirk::Increment => { self.register_i += 1; }
+            MemoryIncrementQuirk::NoIncrement => {}
+        }
+    }
+
     fn handle_opcode(&mut self, opcode: Opcode) {
         match opcode {
             Opcode::ClearScreen => self.clear_screen(),
@@ -333,15 +340,25 @@ impl<'a> Interpreter<'a> {
 
     fn store_registers(&mut self, register: usize) {
         for i in 0..=register {
-            self.ram[self.register_i as usize] = self.registers[i];
-            self.register_i += 1;
+            let index_adjustment = match self.quirk_memory {
+                MemoryIncrementQuirk::Increment => 0,
+                MemoryIncrementQuirk::NoIncrement => i
+            };
+
+            self.ram[self.register_i as usize + index_adjustment] = self.registers[i];
+            self.handle_memory_increment_quirk();
         }
     }
 
     fn load_registers(&mut self, register: usize) {
         for i in 0..=register {
-            self.registers[i] = self.ram[self.register_i as usize];
-            self.register_i += 1;
+            let index_adjustment = match self.quirk_memory {
+                MemoryIncrementQuirk::Increment => 0,
+                MemoryIncrementQuirk::NoIncrement => i
+            };
+            
+            self.registers[i] = self.ram[self.register_i as usize + index_adjustment];
+            self.handle_memory_increment_quirk();
         }
     }
 
@@ -646,7 +663,7 @@ mod tests {
         assert!(!interpreter.keyboard.contains(q_key_mapping), "Key press stored.");
         assert_eq!(interpreter.keyboard.len(), 0, "Wrong number of keypresses stored.");
     }
-    
+
     #[test]
     fn reset_quirk() {
         let mut reset_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::Reset, MemoryIncrementQuirk::default(), DisplayWaitQuirk::default(), ClippingQuirk::default(), ShiftingQuirk::default(), JumpingQuirk::default());
@@ -680,6 +697,28 @@ mod tests {
         no_reset_interpreter.handle_opcode(Opcode::Xor(first_register, second_register));
         assert_eq!(reset_interpreter.registers[REGISTER_F], 0x0, "Register F not reset.");
         assert_eq!(no_reset_interpreter.registers[REGISTER_F], 0x1, "Register F reset.");
+    }
+    
+    #[test]
+    fn memory_quirk() {
+        let mut increment_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::Increment, DisplayWaitQuirk::default(), ClippingQuirk::default(), ShiftingQuirk::default(), JumpingQuirk::default());
+        let mut no_increment_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::NoIncrement, DisplayWaitQuirk::default(), ClippingQuirk::default(), ShiftingQuirk::default(), JumpingQuirk::default());
+
+        let register_values = &[0x32, 0xBC, 0x12, 0xFF, 0x74];
+        let register = 0x4;
+        let starting_address = 0x834;
+        increment_interpreter.register_i = starting_address;
+        no_increment_interpreter.register_i = starting_address;
+        for i in 0..=register {
+            increment_interpreter.registers[i] = register_values[i];
+            no_increment_interpreter.registers[i] = register_values[i];
+        }
+
+        increment_interpreter.handle_opcode(Opcode::StoreRegisters(register));
+        no_increment_interpreter.handle_opcode(Opcode::StoreRegisters(register));
+        
+        assert_eq!(increment_interpreter.register_i, starting_address + register as u16 + 1, "Register I value not incremented.");
+        assert_eq!(no_increment_interpreter.register_i, starting_address, "Register I value incremented.");
     }
 
     #[cfg(test)]

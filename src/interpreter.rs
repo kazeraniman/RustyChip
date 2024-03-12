@@ -621,17 +621,17 @@ mod tests {
         let f_key_mapping = &Interpreter::get_key_mapping(Keycode::F).unwrap();
         interpreter.handle_key_press(Keycode::Q);
         assert!(interpreter.keyboard.contains(q_key_mapping), "Key press not stored.");
-        assert_eq!(interpreter.keyboard.len(), 1, "Wrong number of keypresses stored.");
+        assert_eq!(interpreter.keyboard.len(), 1, "Wrong number of key presses stored.");
 
         // Testing that repeated press doesn't break anything
         interpreter.handle_key_press(Keycode::Q);
         assert!(interpreter.keyboard.contains(q_key_mapping), "Key press not stored.");
-        assert_eq!(interpreter.keyboard.len(), 1, "Wrong number of keypresses stored.");
+        assert_eq!(interpreter.keyboard.len(), 1, "Wrong number of key presses stored.");
 
         interpreter.handle_key_press(Keycode::F);
         assert!(interpreter.keyboard.contains(f_key_mapping), "Key press not stored.");
         assert!(interpreter.keyboard.contains(q_key_mapping), "Stored key press removed.");
-        assert_eq!(interpreter.keyboard.len(), 2, "Wrong number of keypresses stored.");
+        assert_eq!(interpreter.keyboard.len(), 2, "Wrong number of key presses stored.");
     }
 
     #[test]
@@ -645,23 +645,23 @@ mod tests {
         interpreter.handle_key_release(Keycode::L);
         assert!(interpreter.keyboard.contains(q_key_mapping), "Stored key press removed.");
         assert!(interpreter.keyboard.contains(f_key_mapping), "Stored key press removed.");
-        assert_eq!(interpreter.keyboard.len(), 2, "Wrong number of keypresses stored.");
+        assert_eq!(interpreter.keyboard.len(), 2, "Wrong number of key presses stored.");
 
         interpreter.handle_key_release(Keycode::Q);
         assert!(!interpreter.keyboard.contains(q_key_mapping), "Key press stored.");
         assert!(interpreter.keyboard.contains(f_key_mapping), "Key press not stored.");
-        assert_eq!(interpreter.keyboard.len(), 1, "Wrong number of keypresses stored.");
+        assert_eq!(interpreter.keyboard.len(), 1, "Wrong number of key presses stored.");
 
         // Testing that repeated release doesn't break anything
         interpreter.handle_key_release(Keycode::Q);
         assert!(!interpreter.keyboard.contains(q_key_mapping), "Key press stored.");
         assert!(interpreter.keyboard.contains(f_key_mapping), "Key press not stored.");
-        assert_eq!(interpreter.keyboard.len(), 1, "Wrong number of keypresses stored.");
+        assert_eq!(interpreter.keyboard.len(), 1, "Wrong number of key presses stored.");
 
         interpreter.handle_key_release(Keycode::F);
         assert!(!interpreter.keyboard.contains(f_key_mapping), "Key press stored.");
         assert!(!interpreter.keyboard.contains(q_key_mapping), "Key press stored.");
-        assert_eq!(interpreter.keyboard.len(), 0, "Wrong number of keypresses stored.");
+        assert_eq!(interpreter.keyboard.len(), 0, "Wrong number of key presses stored.");
     }
 
     #[test]
@@ -1097,7 +1097,7 @@ mod tests {
             let second_value: u8 = 0x2;
             let third_value: u8 = 0xE;
             let difference = first_value - second_value;
-            let underflowing_difference = difference.overflowing_sub(third_value).0;
+            let underflow_difference = difference.overflowing_sub(third_value).0;
             interpreter.registers[first_register] = first_value;
             interpreter.registers[second_register] = second_value;
             interpreter.handle_opcode(Opcode::SubtractFromFirstRegister(first_register, second_register));
@@ -1107,7 +1107,7 @@ mod tests {
 
             interpreter.registers[second_register] = third_value;
             interpreter.handle_opcode(Opcode::SubtractFromFirstRegister(first_register, second_register));
-            assert_eq!(interpreter.registers[first_register], underflowing_difference, "Underflowing subtraction failed.");
+            assert_eq!(interpreter.registers[first_register], underflow_difference, "Underflow subtraction failed.");
             assert_eq!(interpreter.registers[second_register], third_value, "Second register modified.");
             assert_eq!(interpreter.registers[REGISTER_F], 0, "Borrow bit incorrectly set.");
 
@@ -1120,7 +1120,7 @@ mod tests {
 
             interpreter.registers[second_register] = third_value;
             interpreter.handle_opcode(Opcode::SubtractFromSecondRegister(second_register, first_register));
-            assert_eq!(interpreter.registers[second_register], underflowing_difference, "Underflowing subtraction failed.");
+            assert_eq!(interpreter.registers[second_register], underflow_difference, "Underflow subtraction failed.");
             assert_eq!(interpreter.registers[first_register], difference, "First register modified.");
             assert_eq!(interpreter.registers[REGISTER_F], 0, "Borrow bit incorrectly set.");
 

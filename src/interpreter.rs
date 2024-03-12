@@ -64,6 +64,7 @@ pub struct Interpreter<'a> {
 }
 
 impl<'a> Interpreter<'a> {
+    #[must_use]
     pub fn new_with_sdl(canvas: Option<&'a mut WindowCanvas>, audio_device: Option<&'a AudioDevice<SquareWave>>, quirk_config: QuirkConfig) -> Interpreter<'a> {
         let mut ram = [0; 4096];
         ram[..HEXADECIMAL_DIGIT_SPRITES.len()].copy_from_slice(&HEXADECIMAL_DIGIT_SPRITES[..]);
@@ -157,7 +158,7 @@ impl<'a> Interpreter<'a> {
         let opcode = OpcodeBytes::build(&self.ram[self.program_counter as usize..=(self.program_counter + 1) as usize]);
         let opcode = opcode.get_opcode();
         self.program_counter += PROGRAM_COUNTER_INCREMENT;
-        self.handle_opcode(opcode);
+        self.handle_opcode(&opcode);
     }
 
     pub fn handle_frame(&mut self) {
@@ -172,9 +173,12 @@ impl<'a> Interpreter<'a> {
                     continue;
                 }
 
+                #[allow(clippy::cast_possible_truncation)]
                 let x = (i as u32 % SCREEN_WIDTH) * SCREEN_SCALE;
+                #[allow(clippy::cast_possible_truncation)]
                 let y = (i as u32 / SCREEN_WIDTH) * SCREEN_SCALE;
-                pixels.push(Rect::new(x as i32, y as i32, SCREEN_SCALE, SCREEN_SCALE))
+                #[allow(clippy::cast_possible_wrap)]
+                pixels.push(Rect::new(x as i32, y as i32, SCREEN_SCALE, SCREEN_SCALE));
             }
 
             canvas.set_draw_color(Interpreter::get_fg_colour());
@@ -229,47 +233,47 @@ impl<'a> Interpreter<'a> {
         }
     }
 
-    fn handle_opcode(&mut self, opcode: Opcode) {
+    fn handle_opcode(&mut self, opcode: &Opcode) {
         match opcode {
             Opcode::ClearScreen => self.clear_screen(),
             Opcode::Return => self.return_from_subroutine(),
-            Opcode::JumpAddr(address) => self.jump_addr(address),
-            Opcode::SystemAddr(address) | Opcode::CallAddr(address) => self.call_addr(address),
-            Opcode::SkipRegisterEqualsValue(register, value) => self.skip_register_equals_value(register, value),
-            Opcode::SkipRegisterNotEqualsValue(register, value) => self.skip_register_not_equals_value(register, value),
-            Opcode::SkipRegistersEqual(first_register, second_register) => self.skip_registers_equal(first_register, second_register),
-            Opcode::LoadValue(register, value) => self.load_value(register, value),
-            Opcode::AddValue(register, value) => self.add_value(register, value),
-            Opcode::LoadRegisterValue(first_register, second_register) => self.load_register_value(first_register, second_register),
-            Opcode::Or(first_register, second_register) => self.or(first_register, second_register),
-            Opcode::And(first_register, second_register) => self.and(first_register, second_register),
-            Opcode::Xor(first_register, second_register) => self.xor(first_register, second_register),
-            Opcode::AddRegisters(first_register, second_register) => self.add_registers(first_register, second_register),
-            Opcode::SubtractFromFirstRegister(first_register, second_register) => self.bounded_subtraction(first_register, second_register, first_register),
-            Opcode::BitShiftRight(first_register, second_register) => self.bit_shift_right(first_register, second_register),
-            Opcode::SubtractFromSecondRegister(first_register, second_register) => self.bounded_subtraction(second_register, first_register, first_register),
-            Opcode::BitShiftLeft(first_register, second_register) => self.bit_shift_left(first_register, second_register),
-            Opcode::SkipRegistersNotEqual(first_register, second_register) => self.skip_registers_not_equal(first_register, second_register),
-            Opcode::LoadRegisterI(address) => self.load_register_i(address),
-            Opcode::JumpAddrV0(address) => self.jump_address_v0(address),
-            Opcode::Random(register, value) => self.random(register, value),
+            Opcode::JumpAddr(address) => self.jump_addr(*address),
+            Opcode::SystemAddr(address) | Opcode::CallAddr(address) => self.call_addr(*address),
+            Opcode::SkipRegisterEqualsValue(register, value) => self.skip_register_equals_value(*register, *value),
+            Opcode::SkipRegisterNotEqualsValue(register, value) => self.skip_register_not_equals_value(*register, *value),
+            Opcode::SkipRegistersEqual(first_register, second_register) => self.skip_registers_equal(*first_register, *second_register),
+            Opcode::LoadValue(register, value) => self.load_value(*register, *value),
+            Opcode::AddValue(register, value) => self.add_value(*register, *value),
+            Opcode::LoadRegisterValue(first_register, second_register) => self.load_register_value(*first_register, *second_register),
+            Opcode::Or(first_register, second_register) => self.or(*first_register, *second_register),
+            Opcode::And(first_register, second_register) => self.and(*first_register, *second_register),
+            Opcode::Xor(first_register, second_register) => self.xor(*first_register, *second_register),
+            Opcode::AddRegisters(first_register, second_register) => self.add_registers(*first_register, *second_register),
+            Opcode::SubtractFromFirstRegister(first_register, second_register) => self.bounded_subtraction(*first_register, *second_register, *first_register),
+            Opcode::BitShiftRight(first_register, second_register) => self.bit_shift_right(*first_register, *second_register),
+            Opcode::SubtractFromSecondRegister(first_register, second_register) => self.bounded_subtraction(*second_register, *first_register, *first_register),
+            Opcode::BitShiftLeft(first_register, second_register) => self.bit_shift_left(*first_register, *second_register),
+            Opcode::SkipRegistersNotEqual(first_register, second_register) => self.skip_registers_not_equal(*first_register, *second_register),
+            Opcode::LoadRegisterI(address) => self.load_register_i(*address),
+            Opcode::JumpAddrV0(address) => self.jump_address_v0(*address),
+            Opcode::Random(register, value) => self.random(*register, *value),
             Opcode::Draw(first_register, second_register, length) => {
                 match self.quirk_config.display_wait {
-                    DisplayWaitQuirk::Wait => self.draw(first_register, second_register, length),
-                    DisplayWaitQuirk::NoWait => self.complete_draw(first_register, second_register, length)
+                    DisplayWaitQuirk::Wait => self.draw(*first_register, *second_register, *length),
+                    DisplayWaitQuirk::NoWait => self.complete_draw(*first_register, *second_register, *length)
                 }
             },
-            Opcode::SkipKeyPressed(register) => self.skip_key_pressed(register),
-            Opcode::SkipKeyNotPressed(register) => self.skip_key_not_pressed(register),
-            Opcode::LoadDelayTimer(register) => self.load_delay_timer(register),
-            Opcode::LoadKeyPress(register) => self.load_key_press(register),
-            Opcode::SetDelayTimer(register) => self.set_delay_timer(register),
-            Opcode::SetSoundTimer(register) => self.set_sound_timer(register),
-            Opcode::AddRegisterI(register) => self.add_register_i(register),
-            Opcode::SetIHexSpriteLocation(register) => self.set_register_i_hex_sprite_location(register),
-            Opcode::BinaryCodedDecimal(register) => self.binary_coded_decimal(register),
-            Opcode::StoreRegisters(register) => self.store_registers(register),
-            Opcode::LoadRegisters(register) => self.load_registers(register)
+            Opcode::SkipKeyPressed(register) => self.skip_key_pressed(*register),
+            Opcode::SkipKeyNotPressed(register) => self.skip_key_not_pressed(*register),
+            Opcode::LoadDelayTimer(register) => self.load_delay_timer(*register),
+            Opcode::LoadKeyPress(register) => self.load_key_press(*register),
+            Opcode::SetDelayTimer(register) => self.set_delay_timer(*register),
+            Opcode::SetSoundTimer(register) => self.set_sound_timer(*register),
+            Opcode::AddRegisterI(register) => self.add_register_i(*register),
+            Opcode::SetIHexSpriteLocation(register) => self.set_register_i_hex_sprite_location(*register),
+            Opcode::BinaryCodedDecimal(register) => self.binary_coded_decimal(*register),
+            Opcode::StoreRegisters(register) => self.store_registers(*register),
+            Opcode::LoadRegisters(register) => self.load_registers(*register)
         }
     }
 
@@ -306,7 +310,7 @@ impl<'a> Interpreter<'a> {
     }
 
     fn add_value(&mut self, register: usize, value: u8) {
-        self.registers[register] = ((self.registers[register] as u16 + value as u16) & BYTE_MASK) as u8;
+        self.registers[register] = ((u16::from(self.registers[register]) + u16::from(value)) & BYTE_MASK) as u8;
     }
 
     fn load_register_value(&mut self, first_register: usize, second_register: usize) {
@@ -366,7 +370,7 @@ impl<'a> Interpreter<'a> {
             JumpingQuirk::V0 => 0,
             JumpingQuirk::Vx => (address & 0xF00) >> 0x8
         };
-        self.jump_addr(address + self.registers[target_register as usize] as u16);
+        self.jump_addr(address + u16::from(self.registers[target_register as usize]));
     }
 
     fn load_delay_timer(&mut self, register: usize) {
@@ -383,20 +387,21 @@ impl<'a> Interpreter<'a> {
     }
 
     fn add_register_i(&mut self, register: usize) {
-        self.register_i += self.registers[register] as u16;
+        self.register_i += u16::from(self.registers[register]);
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     fn add_registers(&mut self, first_register: usize, second_register: usize) {
-        let sum: u16 = self.registers[first_register] as u16 + self.registers[second_register] as u16;
+        let sum: u16 = u16::from(self.registers[first_register]) + u16::from(self.registers[second_register]);
         let max_u8 = BYTE_MASK;
         self.registers[first_register] = (sum & max_u8) as u8;
-        self.registers[REGISTER_F] = if sum > max_u8 { 1 } else { 0 };
+        self.registers[REGISTER_F] = u8::from(sum > max_u8);
     }
 
     fn bounded_subtraction(&mut self, minuend_register: usize, subtrahend_register: usize, result_register: usize) {
         let (difference, did_underflow) = self.registers[minuend_register].overflowing_sub(self.registers[subtrahend_register]);
         self.registers[result_register] = difference;
-        self.registers[REGISTER_F] = if !did_underflow { 1 } else { 0 };
+        self.registers[REGISTER_F] = u8::from(!did_underflow);
     }
 
     fn bit_shift_right(&mut self, first_register: usize, second_register: usize) {
@@ -404,7 +409,7 @@ impl<'a> Interpreter<'a> {
             ShiftingQuirk::Vy => second_register,
             ShiftingQuirk::Vx => first_register
         };
-        let will_bit_run_off = if (self.registers[target_shift_register] & LEAST_SIGNIFICANT_BIT_MASK) == 0x1 { 1 } else { 0 };
+        let will_bit_run_off = u8::from((self.registers[target_shift_register] & LEAST_SIGNIFICANT_BIT_MASK) == 0x1);
         self.registers[first_register] = self.registers[target_shift_register] >> 0x1;
         self.registers[REGISTER_F] = will_bit_run_off;
     }
@@ -414,7 +419,7 @@ impl<'a> Interpreter<'a> {
             ShiftingQuirk::Vy => second_register,
             ShiftingQuirk::Vx => first_register
         };
-        let will_bit_run_off = if ((self.registers[target_shift_register] & MOST_SIGNIFICANT_BIT_MASK) >> 7) == 0x1 { 1 } else { 0 };
+        let will_bit_run_off = u8::from(((self.registers[target_shift_register] & MOST_SIGNIFICANT_BIT_MASK) >> 7) == 0x1);
         self.registers[first_register] = self.registers[target_shift_register] << 0x1;
         self.registers[REGISTER_F] = will_bit_run_off;
     }
@@ -440,7 +445,7 @@ impl<'a> Interpreter<'a> {
     }
 
     fn set_register_i_hex_sprite_location(&mut self, register: usize) {
-        self.register_i = (self.registers[register] * HEXADECIMAL_DIGIT_SPRITE_LENGTH) as u16;
+        self.register_i = u16::from(self.registers[register] * HEXADECIMAL_DIGIT_SPRITE_LENGTH);
     }
 
     fn skip_key_pressed(&mut self, register: usize) {
@@ -474,12 +479,12 @@ impl<'a> Interpreter<'a> {
     }
 
     fn complete_draw(&mut self, first_register: usize, second_register: usize, length: u8) {
-        let base_x = self.registers[first_register] as u32 % SCREEN_WIDTH;
-        let base_y = self.registers[second_register] as u32 % SCREEN_HEIGHT;
+        let base_x = u32::from(self.registers[first_register]) % SCREEN_WIDTH;
+        let base_y = u32::from(self.registers[second_register]) % SCREEN_HEIGHT;
         self.registers[REGISTER_F] = 0;
 
         for i in 0..length {
-            let mut buffer_y = base_y + i as u32;
+            let mut buffer_y = base_y + u32::from(i);
             match self.quirk_config.clipping {
                 ClippingQuirk::Clip => {
                     if buffer_y >= SCREEN_HEIGHT {
@@ -491,7 +496,7 @@ impl<'a> Interpreter<'a> {
                 }
             }
 
-            let sprite_byte = self.ram[(self.register_i + i as u16) as usize];
+            let sprite_byte = self.ram[(self.register_i + u16::from(i)) as usize];
             for j in 0..8 {
                 let mut buffer_x = base_x + j;
                 match self.quirk_config.clipping {
@@ -551,15 +556,15 @@ mod tests {
             assert_eq!(byte, if i < hex_digit_sprite_length { &HEXADECIMAL_DIGIT_SPRITES[i] } else { &0 }, "RAM initialized incorrectly.");
         }
 
-        for byte in interpreter.registers.iter() {
+        for byte in &interpreter.registers {
             assert_eq!(byte, &0, "Registers initialized incorrectly.");
         }
 
-        for address in interpreter.stack.iter() {
+        for address in &interpreter.stack {
             assert_eq!(address, &0, "Stack initialized incorrectly.");
         }
 
-        for address in interpreter.drawing_buffer.iter() {
+        for address in &interpreter.drawing_buffer {
             assert!(!address, "Drawing buffer initialized incorrectly.");
         }
     }
@@ -570,8 +575,8 @@ mod tests {
 
         let fake_game_data = vec![0x23, 0x78, 0x93];
         interpreter.load_game(&fake_game_data);
-        for i in 0..fake_game_data.len() {
-            assert_eq!(interpreter.ram[PROGRAM_START_ADDRESS as usize + i], fake_game_data[i], "Loaded game data does not match the original game data.");
+        for (i, fake_game_element) in fake_game_data.iter().enumerate() {
+            assert_eq!(interpreter.ram[PROGRAM_START_ADDRESS as usize + i], *fake_game_element, "Loaded game data does not match the original game data.");
         }
     }
 
@@ -701,8 +706,6 @@ mod tests {
 
     #[cfg(test)]
     mod quirk_tests {
-        use crate::opcodes::Opcode::JumpAddrV0;
-
         use super::*;
 
         #[test]
@@ -724,27 +727,28 @@ mod tests {
             no_reset_interpreter.registers[first_register] = first_value;
             no_reset_interpreter.registers[second_register] = second_value;
             no_reset_interpreter.registers[REGISTER_F] = 0x1;
-            reset_interpreter.handle_opcode(Opcode::And(first_register, second_register));
-            no_reset_interpreter.handle_opcode(Opcode::And(first_register, second_register));
+            reset_interpreter.handle_opcode(&Opcode::And(first_register, second_register));
+            no_reset_interpreter.handle_opcode(&Opcode::And(first_register, second_register));
             assert_eq!(reset_interpreter.registers[REGISTER_F], 0x0, "Register F not reset.");
             assert_eq!(no_reset_interpreter.registers[REGISTER_F], 0x1, "Register F reset.");
 
             reset_interpreter.registers[REGISTER_F] = 0x1;
             no_reset_interpreter.registers[REGISTER_F] = 0x1;
-            reset_interpreter.handle_opcode(Opcode::Or(first_register, second_register));
-            no_reset_interpreter.handle_opcode(Opcode::Or(first_register, second_register));
+            reset_interpreter.handle_opcode(&Opcode::Or(first_register, second_register));
+            no_reset_interpreter.handle_opcode(&Opcode::Or(first_register, second_register));
             assert_eq!(reset_interpreter.registers[REGISTER_F], 0x0, "Register F not reset.");
             assert_eq!(no_reset_interpreter.registers[REGISTER_F], 0x1, "Register F reset.");
 
             reset_interpreter.registers[REGISTER_F] = 0x1;
             no_reset_interpreter.registers[REGISTER_F] = 0x1;
-            reset_interpreter.handle_opcode(Opcode::Xor(first_register, second_register));
-            no_reset_interpreter.handle_opcode(Opcode::Xor(first_register, second_register));
+            reset_interpreter.handle_opcode(&Opcode::Xor(first_register, second_register));
+            no_reset_interpreter.handle_opcode(&Opcode::Xor(first_register, second_register));
             assert_eq!(reset_interpreter.registers[REGISTER_F], 0x0, "Register F not reset.");
             assert_eq!(no_reset_interpreter.registers[REGISTER_F], 0x1, "Register F reset.");
         }
 
         #[test]
+        #[allow(clippy::cast_possible_truncation)]
         fn memory_quirk() {
             let mut increment_quirk_config = QuirkConfig::new();
             increment_quirk_config.memory = MemoryIncrementQuirk::Increment;
@@ -758,13 +762,11 @@ mod tests {
             let starting_address = 0x834;
             increment_interpreter.register_i = starting_address;
             no_increment_interpreter.register_i = starting_address;
-            for i in 0..=register {
-                increment_interpreter.registers[i] = register_values[i];
-                no_increment_interpreter.registers[i] = register_values[i];
-            }
+            increment_interpreter.registers[..=register].copy_from_slice(&register_values[..=register]);
+            no_increment_interpreter.registers[..=register].copy_from_slice(&register_values[..=register]);
 
-            increment_interpreter.handle_opcode(Opcode::StoreRegisters(register));
-            no_increment_interpreter.handle_opcode(Opcode::StoreRegisters(register));
+            increment_interpreter.handle_opcode(&Opcode::StoreRegisters(register));
+            no_increment_interpreter.handle_opcode(&Opcode::StoreRegisters(register));
 
             assert_eq!(increment_interpreter.register_i, starting_address + register as u16 + 1, "Register I value not incremented.");
             assert_eq!(no_increment_interpreter.register_i, starting_address, "Register I value incremented.");
@@ -787,8 +789,8 @@ mod tests {
             no_wait_interpreter.register_i = sprite_location;
             wait_interpreter.ram[sprite_location as usize] = sprite;
             no_wait_interpreter.ram[sprite_location as usize] = sprite;
-            wait_interpreter.handle_opcode(Opcode::Draw(first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH));
-            no_wait_interpreter.handle_opcode(Opcode::Draw(first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH));
+            wait_interpreter.handle_opcode(&Opcode::Draw(first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH));
+            no_wait_interpreter.handle_opcode(&Opcode::Draw(first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH));
             assert!(wait_interpreter.should_wait_for_display_refresh, "Not waiting for display refresh.");
             assert!(!no_wait_interpreter.should_wait_for_display_refresh, "Waiting for display refresh.");
             assert_eq!(wait_interpreter.wait_for_display_refresh_data, (first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH), "Wrong data set to wait for display refresh.");
@@ -799,40 +801,40 @@ mod tests {
 
         #[test]
         fn shifting_quirk() {
-            let mut vy_quirk_config = QuirkConfig::new();
-            vy_quirk_config.shifting = ShiftingQuirk::Vy;
-            let mut vx_quirk_config = QuirkConfig::new();
-            vx_quirk_config.shifting = ShiftingQuirk::Vx;
-            let mut vy_shift_interpreter = Interpreter::new_with_sdl(None, None, vy_quirk_config);
-            let mut vx_shift_interpreter = Interpreter::new_with_sdl(None, None, vx_quirk_config);
+            let mut disabled_quirk_config = QuirkConfig::new();
+            disabled_quirk_config.shifting = ShiftingQuirk::Vy;
+            let mut enabled_quirk_config = QuirkConfig::new();
+            enabled_quirk_config.shifting = ShiftingQuirk::Vx;
+            let mut disabled_shift_interpreter = Interpreter::new_with_sdl(None, None, disabled_quirk_config);
+            let mut enabled_shift_interpreter = Interpreter::new_with_sdl(None, None, enabled_quirk_config);
 
             let first_register = 0x0;
             let second_register = 0x1;
             let first_value = 0xAA;
             let second_value = 0xF0;
-            vy_shift_interpreter.registers[first_register] = first_value;
-            vy_shift_interpreter.registers[second_register] = second_value;
-            vx_shift_interpreter.registers[first_register] = first_value;
-            vx_shift_interpreter.registers[second_register] = second_value;
-            vy_shift_interpreter.handle_opcode(Opcode::BitShiftLeft(first_register, second_register));
-            vx_shift_interpreter.handle_opcode(Opcode::BitShiftLeft(first_register, second_register));
-            assert_eq!(vy_shift_interpreter.registers[first_register], second_value << 1, "Left shift not performed correctly.");
-            assert_eq!(vy_shift_interpreter.registers[second_register], second_value, "Second register modified.");
-            assert_eq!(vy_shift_interpreter.registers[REGISTER_F], 0x1, "Register F not set.");
-            assert_eq!(vx_shift_interpreter.registers[first_register], first_value << 1, "Left shift not performed correctly.");
-            assert_eq!(vx_shift_interpreter.registers[second_register], second_value, "Second register modified.");
-            assert_eq!(vx_shift_interpreter.registers[REGISTER_F], 0x1, "Register F not set.");
+            disabled_shift_interpreter.registers[first_register] = first_value;
+            disabled_shift_interpreter.registers[second_register] = second_value;
+            enabled_shift_interpreter.registers[first_register] = first_value;
+            enabled_shift_interpreter.registers[second_register] = second_value;
+            disabled_shift_interpreter.handle_opcode(&Opcode::BitShiftLeft(first_register, second_register));
+            enabled_shift_interpreter.handle_opcode(&Opcode::BitShiftLeft(first_register, second_register));
+            assert_eq!(disabled_shift_interpreter.registers[first_register], second_value << 1, "Left shift not performed correctly.");
+            assert_eq!(disabled_shift_interpreter.registers[second_register], second_value, "Second register modified.");
+            assert_eq!(disabled_shift_interpreter.registers[REGISTER_F], 0x1, "Register F not set.");
+            assert_eq!(enabled_shift_interpreter.registers[first_register], first_value << 1, "Left shift not performed correctly.");
+            assert_eq!(enabled_shift_interpreter.registers[second_register], second_value, "Second register modified.");
+            assert_eq!(enabled_shift_interpreter.registers[REGISTER_F], 0x1, "Register F not set.");
 
-            vy_shift_interpreter.registers[first_register] = first_value;
-            vx_shift_interpreter.registers[first_register] = first_value;
-            vy_shift_interpreter.handle_opcode(Opcode::BitShiftRight(first_register, second_register));
-            vx_shift_interpreter.handle_opcode(Opcode::BitShiftRight(first_register, second_register));
-            assert_eq!(vy_shift_interpreter.registers[first_register], second_value >> 1, "Left shift not performed correctly.");
-            assert_eq!(vy_shift_interpreter.registers[second_register], second_value, "Second register modified.");
-            assert_eq!(vy_shift_interpreter.registers[REGISTER_F], 0x0, "Register F not set.");
-            assert_eq!(vx_shift_interpreter.registers[first_register], first_value >> 1, "Left shift not performed correctly.");
-            assert_eq!(vx_shift_interpreter.registers[second_register], second_value, "Second register modified.");
-            assert_eq!(vx_shift_interpreter.registers[REGISTER_F], 0x0, "Register F not set.");
+            disabled_shift_interpreter.registers[first_register] = first_value;
+            enabled_shift_interpreter.registers[first_register] = first_value;
+            disabled_shift_interpreter.handle_opcode(&Opcode::BitShiftRight(first_register, second_register));
+            enabled_shift_interpreter.handle_opcode(&Opcode::BitShiftRight(first_register, second_register));
+            assert_eq!(disabled_shift_interpreter.registers[first_register], second_value >> 1, "Left shift not performed correctly.");
+            assert_eq!(disabled_shift_interpreter.registers[second_register], second_value, "Second register modified.");
+            assert_eq!(disabled_shift_interpreter.registers[REGISTER_F], 0x0, "Register F not set.");
+            assert_eq!(enabled_shift_interpreter.registers[first_register], first_value >> 1, "Left shift not performed correctly.");
+            assert_eq!(enabled_shift_interpreter.registers[second_register], second_value, "Second register modified.");
+            assert_eq!(enabled_shift_interpreter.registers[REGISTER_F], 0x0, "Register F not set.");
         }
 
         #[test]
@@ -846,7 +848,9 @@ mod tests {
 
             let first_register = 0x0;
             let second_register = 0x1;
+            #[allow(clippy::cast_possible_truncation)]
             let first_value = (SCREEN_WIDTH - 1) as u8;
+            #[allow(clippy::cast_possible_truncation)]
             let second_value = (SCREEN_HEIGHT - 1) as u8;
             let sprite = 0xFF;
             let sprite_height = 0x2;
@@ -881,27 +885,27 @@ mod tests {
 
         #[test]
         fn jumping_quirk() {
-            let mut v0_quirk_config = QuirkConfig::new();
-            v0_quirk_config.jumping = JumpingQuirk::V0;
-            let mut vx_quirk_config = QuirkConfig::new();
-            vx_quirk_config.jumping = JumpingQuirk::Vx;
-            let mut v0_jump_interpreter = Interpreter::new_with_sdl(None, None, v0_quirk_config);
-            let mut vx_jump_interpreter = Interpreter::new_with_sdl(None, None, vx_quirk_config);
+            let mut disabled_quirk_config = QuirkConfig::new();
+            disabled_quirk_config.jumping = JumpingQuirk::V0;
+            let mut enabled_quirk_config = QuirkConfig::new();
+            enabled_quirk_config.jumping = JumpingQuirk::Vx;
+            let mut disabled_jump_interpreter = Interpreter::new_with_sdl(None, None, disabled_quirk_config);
+            let mut enabled_jump_interpreter = Interpreter::new_with_sdl(None, None, enabled_quirk_config);
 
             let first_register = 0x0;
             let second_register = 0x5;
             let first_value = 0xA;
             let second_value = 0x6;
             let address = 0x543;
-            v0_jump_interpreter.registers[first_register] = first_value;
-            v0_jump_interpreter.registers[second_register] = second_value;
-            vx_jump_interpreter.registers[first_register] = first_value;
-            vx_jump_interpreter.registers[second_register] = second_value;
-            v0_jump_interpreter.handle_opcode(JumpAddrV0(address));
-            vx_jump_interpreter.handle_opcode(JumpAddrV0(address));
+            disabled_jump_interpreter.registers[first_register] = first_value;
+            disabled_jump_interpreter.registers[second_register] = second_value;
+            enabled_jump_interpreter.registers[first_register] = first_value;
+            enabled_jump_interpreter.registers[second_register] = second_value;
+            disabled_jump_interpreter.handle_opcode(&Opcode::JumpAddrV0(address));
+            enabled_jump_interpreter.handle_opcode(&Opcode::JumpAddrV0(address));
 
-            assert_eq!(v0_jump_interpreter.program_counter, address + first_value as u16, "Jumped to value in wrong register.");
-            assert_eq!(vx_jump_interpreter.program_counter, address + second_value as u16, "Jumped to value in wrong register.");
+            assert_eq!(disabled_jump_interpreter.program_counter, address + u16::from(first_value), "Jumped to value in wrong register.");
+            assert_eq!(enabled_jump_interpreter.program_counter, address + u16::from(second_value), "Jumped to value in wrong register.");
         }
     }
 
@@ -914,7 +918,7 @@ mod tests {
             let mut interpreter = Interpreter::new();
 
             let address = 0x381;
-            interpreter.handle_opcode(Opcode::JumpAddr(address));
+            interpreter.handle_opcode(&Opcode::JumpAddr(address));
             assert_eq!(interpreter.program_counter, address, "Program counter not updated.");
         }
 
@@ -924,12 +928,12 @@ mod tests {
 
             let register = 0x5;
             let value = 0xA2;
-            interpreter.handle_opcode(Opcode::SkipRegisterEqualsValue(register, value));
+            interpreter.handle_opcode(&Opcode::SkipRegisterEqualsValue(register, value));
             assert_eq!(interpreter.program_counter, 0x0, "Program counter updated when register value doesn't match.");
             assert_eq!(interpreter.registers[register], 0x0, "Register value modified.");
 
             interpreter.registers[register] = value;
-            interpreter.handle_opcode(Opcode::SkipRegisterEqualsValue(register, value));
+            interpreter.handle_opcode(&Opcode::SkipRegisterEqualsValue(register, value));
             assert_eq!(interpreter.program_counter, PROGRAM_COUNTER_INCREMENT, "Program counter not updated when register value matches.");
             assert_eq!(interpreter.registers[register], value, "Register value modified.");
         }
@@ -941,13 +945,13 @@ mod tests {
             let register = 0xA;
             let first_value = 0x23;
             interpreter.registers[register] = first_value;
-            interpreter.handle_opcode(Opcode::SkipRegisterNotEqualsValue(register, first_value));
+            interpreter.handle_opcode(&Opcode::SkipRegisterNotEqualsValue(register, first_value));
             assert_eq!(interpreter.program_counter, 0x0, "Program counter updated when register value matches.");
             assert_eq!(interpreter.registers[register], first_value, "Register value modified.");
 
             let second_value = 0x24;
             interpreter.registers[register] = second_value;
-            interpreter.handle_opcode(Opcode::SkipRegisterNotEqualsValue(register, first_value));
+            interpreter.handle_opcode(&Opcode::SkipRegisterNotEqualsValue(register, first_value));
             assert_eq!(interpreter.program_counter, PROGRAM_COUNTER_INCREMENT, "Program counter not updated when register value doesn't match.");
             assert_eq!(interpreter.registers[register], second_value, "Register value modified.");
         }
@@ -962,13 +966,13 @@ mod tests {
             let second_value = 0x5;
             interpreter.registers[first_register] = first_value;
             interpreter.registers[second_register] = second_value;
-            interpreter.handle_opcode(Opcode::SkipRegistersEqual(first_register, second_register));
+            interpreter.handle_opcode(&Opcode::SkipRegistersEqual(first_register, second_register));
             assert_eq!(interpreter.program_counter, 0x0, "Program counter updated when registers don't match.");
             assert_eq!(interpreter.registers[first_register], first_value, "First register value modified.");
             assert_eq!(interpreter.registers[second_register], second_value, "Second register value modified.");
 
             interpreter.registers[first_register] = second_value;
-            interpreter.handle_opcode(Opcode::SkipRegistersEqual(first_register, second_register));
+            interpreter.handle_opcode(&Opcode::SkipRegistersEqual(first_register, second_register));
             assert_eq!(interpreter.program_counter, PROGRAM_COUNTER_INCREMENT, "Program counter not updated when registers match.");
             assert_eq!(interpreter.registers[first_register], second_value, "First register value modified.");
             assert_eq!(interpreter.registers[second_register], second_value, "Second register value modified.");
@@ -983,14 +987,14 @@ mod tests {
             let first_value = 0x4;
             interpreter.registers[first_register] = first_value;
             interpreter.registers[second_register] = first_value;
-            interpreter.handle_opcode(Opcode::SkipRegistersNotEqual(first_register, second_register));
+            interpreter.handle_opcode(&Opcode::SkipRegistersNotEqual(first_register, second_register));
             assert_eq!(interpreter.program_counter, 0x0, "Program counter updated when registers match.");
             assert_eq!(interpreter.registers[first_register], first_value, "First register value modified.");
             assert_eq!(interpreter.registers[second_register], first_value, "Second register value modified.");
 
             let second_value = 0x5;
             interpreter.registers[first_register] = second_value;
-            interpreter.handle_opcode(Opcode::SkipRegistersNotEqual(first_register, second_register));
+            interpreter.handle_opcode(&Opcode::SkipRegistersNotEqual(first_register, second_register));
             assert_eq!(interpreter.program_counter, PROGRAM_COUNTER_INCREMENT, "Program counter not updated when registers don't match.");
             assert_eq!(interpreter.registers[first_register], second_value, "First register value modified.");
             assert_eq!(interpreter.registers[second_register], first_value, "Second register value modified.");
@@ -1002,7 +1006,7 @@ mod tests {
 
             let register = 0x0;
             let value = 0x58;
-            interpreter.handle_opcode(Opcode::LoadValue(register, value));
+            interpreter.handle_opcode(&Opcode::LoadValue(register, value));
             assert_eq!(interpreter.registers[register], value, "Value not loaded into register.");
         }
 
@@ -1014,11 +1018,11 @@ mod tests {
             let value = 0xAB;
             let first_added_value = 0x11;
             interpreter.registers[register] = value;
-            interpreter.handle_opcode(Opcode::AddValue(register, first_added_value));
+            interpreter.handle_opcode(&Opcode::AddValue(register, first_added_value));
             assert_eq!(interpreter.registers[register], value + first_added_value, "Regular addition failed.");
 
             let second_added_value = 0xAA;
-            interpreter.handle_opcode(Opcode::AddValue(register, second_added_value));
+            interpreter.handle_opcode(&Opcode::AddValue(register, second_added_value));
             let sum_with_truncation = 0x66;
             assert_eq!(interpreter.registers[register], sum_with_truncation, "Overflow not handled. Should truncate.");
         }
@@ -1031,7 +1035,7 @@ mod tests {
             let first_register = 0x0;
             let second_register = 0x1;
             interpreter.registers[second_register] = original_value;
-            interpreter.handle_opcode(Opcode::LoadRegisterValue(first_register, second_register));
+            interpreter.handle_opcode(&Opcode::LoadRegisterValue(first_register, second_register));
             assert_eq!(interpreter.registers[first_register], original_value, "Value not loaded into register.");
             assert_eq!(interpreter.registers[second_register], original_value, "Original register value modified.");
         }
@@ -1047,7 +1051,7 @@ mod tests {
             interpreter.registers[first_register] = first_value;
             interpreter.registers[second_register] = second_value;
             interpreter.registers[REGISTER_F] = 0x1;
-            interpreter.handle_opcode(Opcode::Or(first_register, second_register));
+            interpreter.handle_opcode(&Opcode::Or(first_register, second_register));
             assert_eq!(interpreter.registers[first_register], first_value | second_value, "Bitwise OR not applied correctly.");
             assert_eq!(interpreter.registers[second_register], second_value, "Second register value modified.");
             assert_eq!(interpreter.registers[REGISTER_F], 0x0, "Register F not reset.");
@@ -1064,7 +1068,7 @@ mod tests {
             interpreter.registers[first_register] = first_value;
             interpreter.registers[second_register] = second_value;
             interpreter.registers[REGISTER_F] = 0x1;
-            interpreter.handle_opcode(Opcode::And(first_register, second_register));
+            interpreter.handle_opcode(&Opcode::And(first_register, second_register));
             assert_eq!(interpreter.registers[first_register], first_value & second_value, "Bitwise AND not applied correctly.");
             assert_eq!(interpreter.registers[second_register], second_value, "Second register value modified.");
             assert_eq!(interpreter.registers[REGISTER_F], 0x0, "Register F not reset.");
@@ -1081,7 +1085,7 @@ mod tests {
             interpreter.registers[first_register] = first_value;
             interpreter.registers[second_register] = second_value;
             interpreter.registers[REGISTER_F] = 0x1;
-            interpreter.handle_opcode(Opcode::Xor(first_register, second_register));
+            interpreter.handle_opcode(&Opcode::Xor(first_register, second_register));
             assert_eq!(interpreter.registers[first_register], first_value ^ second_value, "Bitwise XOR not applied correctly.");
             assert_eq!(interpreter.registers[second_register], second_value, "Second register value modified.");
             assert_eq!(interpreter.registers[REGISTER_F], 0x0, "Register F not reset.");
@@ -1092,9 +1096,10 @@ mod tests {
             let mut interpreter = Interpreter::new();
 
             // Since the result is random, we basically just check to make sure that it doesn't panic
-            interpreter.handle_opcode(Opcode::Random(0x9, 0x53));
+            interpreter.handle_opcode(&Opcode::Random(0x9, 0x53));
         }
 
+        #[allow(clippy::cast_possible_truncation)]
         #[test]
         fn handle_store_registers_opcode() {
             let mut interpreter = Interpreter::new();
@@ -1104,25 +1109,21 @@ mod tests {
             let starting_address = 0x834;
             let starting_address_usize = starting_address as usize;
             interpreter.register_i = starting_address;
-            for i in 0..=register {
-                interpreter.registers[i] = register_values[i];
-            }
+            interpreter.registers[0..=register].copy_from_slice(&register_values[0..=register]);
 
-            interpreter.handle_opcode(Opcode::StoreRegisters(register));
+            interpreter.handle_opcode(&Opcode::StoreRegisters(register));
 
             assert_eq!(interpreter.ram[starting_address_usize - 0x1], 0x0, "Ram location before starting address modified.");
             assert_eq!(interpreter.ram[starting_address_usize + register + 0x1], 0x0, "Ram location past modification area modified.");
             assert_eq!(interpreter.register_i, starting_address + register as u16 + 1, "Register I value not incremented.");
 
-            for i in 0..=register {
-                assert_eq!(interpreter.ram[starting_address_usize + i], register_values[i], "Register value not stored.");
-            }
-
-            for i in 0..=register {
-                assert_eq!(interpreter.registers[i], register_values[i], "Register value modified.");
+            for (i, register_value) in register_values.iter().enumerate() {
+                assert_eq!(interpreter.ram[starting_address_usize + i], *register_value, "Register value not stored.");
+                assert_eq!(interpreter.registers[i], *register_value, "Register value modified.");
             }
         }
 
+        #[allow(clippy::cast_possible_truncation)]
         #[test]
         fn handle_load_registers_opcode() {
             let mut interpreter = Interpreter::new();
@@ -1132,21 +1133,16 @@ mod tests {
             let starting_address = 0x900;
             let starting_address_usize = starting_address as usize;
             interpreter.register_i = starting_address;
-            for i in 0..=register {
-                interpreter.ram[starting_address_usize + i] = ram_values[i];
-            }
+            interpreter.ram[starting_address_usize..=(starting_address_usize + register)].copy_from_slice(&ram_values[0..=register]);
 
-            interpreter.handle_opcode(Opcode::LoadRegisters(register));
+            interpreter.handle_opcode(&Opcode::LoadRegisters(register));
 
             assert_eq!(interpreter.registers[register + 0x1], 0x0, "Register after modification area modified.");
             assert_eq!(interpreter.register_i, starting_address + register as u16 + 1, "Register I value not incremented.");
 
-            for i in 0..=register {
-                assert_eq!(interpreter.registers[i], ram_values[i], "Register value not loaded.");
-            }
-
-            for i in 0..=register {
-                assert_eq!(interpreter.ram[starting_address_usize + i], ram_values[i], "Ram value modified.");
+            for (i, ram_value) in ram_values.iter().enumerate() {
+                assert_eq!(interpreter.registers[i], *ram_value, "Register value not loaded.");
+                assert_eq!(interpreter.ram[starting_address_usize + i], *ram_value, "Ram value modified.");
             }
         }
 
@@ -1155,7 +1151,7 @@ mod tests {
             let mut interpreter = Interpreter::new();
 
             let address = 0x246;
-            interpreter.handle_opcode(Opcode::LoadRegisterI(address));
+            interpreter.handle_opcode(&Opcode::LoadRegisterI(address));
             assert_eq!(interpreter.register_i, address, "Register I not updated.");
         }
 
@@ -1167,8 +1163,8 @@ mod tests {
             let value = 0x34;
             let address = 0x111;
             interpreter.registers[register] = value;
-            interpreter.handle_opcode(Opcode::JumpAddrV0(address));
-            assert_eq!(interpreter.program_counter, value as u16 + address, "Program counter not updated.");
+            interpreter.handle_opcode(&Opcode::JumpAddrV0(address));
+            assert_eq!(interpreter.program_counter, u16::from(value) + address, "Program counter not updated.");
             assert_eq!(interpreter.registers[register], value, "Register 0 modified.");
         }
 
@@ -1179,7 +1175,7 @@ mod tests {
             let value = 0x54;
             let register = 0x6;
             interpreter.delay_timer = value;
-            interpreter.handle_opcode(Opcode::LoadDelayTimer(register));
+            interpreter.handle_opcode(&Opcode::LoadDelayTimer(register));
             assert_eq!(interpreter.registers[register], value, "Register not updated.");
             assert_eq!(interpreter.delay_timer, value, "Delay timer modified.");
         }
@@ -1191,7 +1187,7 @@ mod tests {
             let value = 0x20;
             let register = 0x9;
             interpreter.registers[register] = value;
-            interpreter.handle_opcode(Opcode::SetDelayTimer(register));
+            interpreter.handle_opcode(&Opcode::SetDelayTimer(register));
             assert_eq!(interpreter.delay_timer, value, "Delay timer not updated.");
             assert_eq!(interpreter.registers[register], value, "Register modified.");
         }
@@ -1203,7 +1199,7 @@ mod tests {
             let value = 0x77;
             let register = 0x4;
             interpreter.registers[register] = value;
-            interpreter.handle_opcode(Opcode::SetSoundTimer(register));
+            interpreter.handle_opcode(&Opcode::SetSoundTimer(register));
             assert_eq!(interpreter.sound_timer, value, "Sound timer not updated.");
             assert_eq!(interpreter.registers[register], value, "Register modified.");
         }
@@ -1217,8 +1213,8 @@ mod tests {
             let register = 0x7;
             interpreter.register_i = starting_address;
             interpreter.registers[register] = value;
-            interpreter.handle_opcode(Opcode::AddRegisterI(register));
-            assert_eq!(interpreter.register_i, starting_address + value as u16, "Register I not updated.");
+            interpreter.handle_opcode(&Opcode::AddRegisterI(register));
+            assert_eq!(interpreter.register_i, starting_address + u16::from(value), "Register I not updated.");
             assert_eq!(interpreter.registers[register], value, "Register modified.");
         }
 
@@ -1232,20 +1228,20 @@ mod tests {
             let second_value = 0x8;
             interpreter.registers[first_register] = first_value;
             interpreter.registers[second_register] = second_value;
-            interpreter.handle_opcode(Opcode::AddRegisters(first_register, second_register));
+            interpreter.handle_opcode(&Opcode::AddRegisters(first_register, second_register));
             assert_eq!(interpreter.registers[first_register], first_value + second_value, "Basic addition failed.");
             assert_eq!(interpreter.registers[second_register], second_value, "Second register modified.");
             assert_eq!(interpreter.registers[REGISTER_F], 0, "Overflow bit incorrectly set.");
 
             interpreter.registers[REGISTER_F] = first_value;
             interpreter.registers[second_register] = second_value;
-            interpreter.handle_opcode(Opcode::AddRegisters(REGISTER_F, second_register));
+            interpreter.handle_opcode(&Opcode::AddRegisters(REGISTER_F, second_register));
             assert_eq!(interpreter.registers[second_register], second_value, "Second register modified.");
             assert_eq!(interpreter.registers[REGISTER_F], 0, "Overflow bit incorrectly set.");
 
             interpreter.registers[first_register] = first_value;
             interpreter.registers[REGISTER_F] = second_value;
-            interpreter.handle_opcode(Opcode::AddRegisters(first_register, REGISTER_F));
+            interpreter.handle_opcode(&Opcode::AddRegisters(first_register, REGISTER_F));
             assert_eq!(interpreter.registers[first_register], first_value + second_value, "Basic addition with register F failed.");
             assert_eq!(interpreter.registers[REGISTER_F], 0, "Overflow bit incorrectly set.");
 
@@ -1253,20 +1249,20 @@ mod tests {
             let second_value = 0xDD;
             interpreter.registers[first_register] = first_value;
             interpreter.registers[second_register] = second_value;
-            interpreter.handle_opcode(Opcode::AddRegisters(first_register, second_register));
+            interpreter.handle_opcode(&Opcode::AddRegisters(first_register, second_register));
             assert_eq!(interpreter.registers[first_register], 0xCB, "Addition with overflow failed.");
             assert_eq!(interpreter.registers[second_register], second_value, "Second register modified.");
             assert_eq!(interpreter.registers[REGISTER_F], 1, "Overflow bit incorrectly not set.");
 
             interpreter.registers[REGISTER_F] = first_value;
             interpreter.registers[second_register] = second_value;
-            interpreter.handle_opcode(Opcode::AddRegisters(REGISTER_F, second_register));
+            interpreter.handle_opcode(&Opcode::AddRegisters(REGISTER_F, second_register));
             assert_eq!(interpreter.registers[second_register], second_value, "Second register modified.");
             assert_eq!(interpreter.registers[REGISTER_F], 1, "Overflow bit incorrectly set.");
 
             interpreter.registers[first_register] = first_value;
             interpreter.registers[REGISTER_F] = second_value;
-            interpreter.handle_opcode(Opcode::AddRegisters(first_register, REGISTER_F));
+            interpreter.handle_opcode(&Opcode::AddRegisters(first_register, REGISTER_F));
             assert_eq!(interpreter.registers[first_register], 0xCB, "Addition with overflow with register F failed.");
             assert_eq!(interpreter.registers[REGISTER_F], 1, "Overflow bit incorrectly set.");
         }
@@ -1284,62 +1280,62 @@ mod tests {
             let underflow_difference = difference.overflowing_sub(third_value).0;
             interpreter.registers[first_register] = first_value;
             interpreter.registers[second_register] = second_value;
-            interpreter.handle_opcode(Opcode::SubtractFromFirstRegister(first_register, second_register));
+            interpreter.handle_opcode(&Opcode::SubtractFromFirstRegister(first_register, second_register));
             assert_eq!(interpreter.registers[first_register], difference, "Basic subtraction failed.");
             assert_eq!(interpreter.registers[second_register], second_value, "Second register modified.");
             assert_eq!(interpreter.registers[REGISTER_F], 1, "Borrow bit incorrectly not set.");
 
             interpreter.registers[second_register] = third_value;
-            interpreter.handle_opcode(Opcode::SubtractFromFirstRegister(first_register, second_register));
+            interpreter.handle_opcode(&Opcode::SubtractFromFirstRegister(first_register, second_register));
             assert_eq!(interpreter.registers[first_register], underflow_difference, "Underflow subtraction failed.");
             assert_eq!(interpreter.registers[second_register], third_value, "Second register modified.");
             assert_eq!(interpreter.registers[REGISTER_F], 0, "Borrow bit incorrectly set.");
 
             interpreter.registers[second_register] = first_value;
             interpreter.registers[first_register] = second_value;
-            interpreter.handle_opcode(Opcode::SubtractFromSecondRegister(first_register, second_register));
+            interpreter.handle_opcode(&Opcode::SubtractFromSecondRegister(first_register, second_register));
             assert_eq!(interpreter.registers[first_register], difference, "Basic subtraction failed.");
             assert_eq!(interpreter.registers[second_register], first_value, "Second register modified.");
             assert_eq!(interpreter.registers[REGISTER_F], 1, "Borrow bit incorrectly not set.");
 
             interpreter.registers[second_register] = third_value;
-            interpreter.handle_opcode(Opcode::SubtractFromSecondRegister(second_register, first_register));
+            interpreter.handle_opcode(&Opcode::SubtractFromSecondRegister(second_register, first_register));
             assert_eq!(interpreter.registers[second_register], underflow_difference, "Underflow subtraction failed.");
             assert_eq!(interpreter.registers[first_register], difference, "First register modified.");
             assert_eq!(interpreter.registers[REGISTER_F], 0, "Borrow bit incorrectly set.");
 
             interpreter.registers[first_register] = third_value;
             interpreter.registers[second_register] = third_value;
-            interpreter.handle_opcode(Opcode::SubtractFromSecondRegister(second_register, first_register));
+            interpreter.handle_opcode(&Opcode::SubtractFromSecondRegister(second_register, first_register));
             assert_eq!(interpreter.registers[second_register], 0x0, "Zero-result subtraction failed.");
             assert_eq!(interpreter.registers[first_register], third_value, "First register modified.");
             assert_eq!(interpreter.registers[REGISTER_F], 1, "Borrow bit incorrectly not set.");
 
             interpreter.registers[REGISTER_F] = first_value;
             interpreter.registers[second_register] = second_value;
-            interpreter.handle_opcode(Opcode::SubtractFromFirstRegister(REGISTER_F, second_register));
+            interpreter.handle_opcode(&Opcode::SubtractFromFirstRegister(REGISTER_F, second_register));
             assert_eq!(interpreter.registers[second_register], second_value, "Second register modified.");
             assert_eq!(interpreter.registers[REGISTER_F], 1, "Borrow bit incorrectly not set.");
 
             interpreter.registers[second_register] = third_value;
-            interpreter.handle_opcode(Opcode::SubtractFromFirstRegister(REGISTER_F, second_register));
+            interpreter.handle_opcode(&Opcode::SubtractFromFirstRegister(REGISTER_F, second_register));
             assert_eq!(interpreter.registers[second_register], third_value, "Second register modified.");
             assert_eq!(interpreter.registers[REGISTER_F], 0, "Borrow bit incorrectly set.");
 
             interpreter.registers[REGISTER_F] = first_value;
             interpreter.registers[first_register] = second_value;
-            interpreter.handle_opcode(Opcode::SubtractFromSecondRegister(first_register, REGISTER_F));
+            interpreter.handle_opcode(&Opcode::SubtractFromSecondRegister(first_register, REGISTER_F));
             assert_eq!(interpreter.registers[first_register], difference, "Basic subtraction with register F failed.");
             assert_eq!(interpreter.registers[REGISTER_F], 1, "Borrow bit incorrectly not set.");
 
             interpreter.registers[REGISTER_F] = third_value;
-            interpreter.handle_opcode(Opcode::SubtractFromSecondRegister(REGISTER_F, first_register));
+            interpreter.handle_opcode(&Opcode::SubtractFromSecondRegister(REGISTER_F, first_register));
             assert_eq!(interpreter.registers[first_register], difference, "First register modified.");
             assert_eq!(interpreter.registers[REGISTER_F], 0, "Borrow bit incorrectly set.");
 
             interpreter.registers[REGISTER_F] = third_value;
             interpreter.registers[second_register] = third_value;
-            interpreter.handle_opcode(Opcode::SubtractFromSecondRegister(second_register, REGISTER_F));
+            interpreter.handle_opcode(&Opcode::SubtractFromSecondRegister(second_register, REGISTER_F));
             assert_eq!(interpreter.registers[second_register], 0x0, "Zero-result subtraction failed.");
             assert_eq!(interpreter.registers[REGISTER_F], 1, "Borrow bit incorrectly not set.");
         }
@@ -1352,18 +1348,18 @@ mod tests {
             let second_register = 0x5;
             let value = 0xAA;
             interpreter.registers[second_register] = value;
-            interpreter.handle_opcode(Opcode::BitShiftRight(first_register, second_register));
+            interpreter.handle_opcode(&Opcode::BitShiftRight(first_register, second_register));
             assert_eq!(interpreter.registers[first_register], value >> 1, "Bit shift right failed.");
             assert_eq!(interpreter.registers[second_register], value, "Second register modified.");
             assert_eq!(interpreter.registers[REGISTER_F], 0, "Shift bit incorrectly set");
 
             interpreter.registers[second_register] = interpreter.registers[first_register];
-            interpreter.handle_opcode(Opcode::BitShiftRight(first_register, second_register));
+            interpreter.handle_opcode(&Opcode::BitShiftRight(first_register, second_register));
             assert_eq!(interpreter.registers[first_register], value >> 2, "Bit shift right failed.");
             assert_eq!(interpreter.registers[second_register], value >> 1, "Second register modified.");
             assert_eq!(interpreter.registers[REGISTER_F], 1, "Shift bit incorrectly not set");
 
-            interpreter.handle_opcode(Opcode::BitShiftRight(REGISTER_F, second_register));
+            interpreter.handle_opcode(&Opcode::BitShiftRight(REGISTER_F, second_register));
             assert_eq!(interpreter.registers[second_register], value >> 1, "Second register modified.");
             assert_eq!(interpreter.registers[REGISTER_F], 1, "Shift bit incorrectly set");
         }
@@ -1376,18 +1372,18 @@ mod tests {
             let second_register = 0xB;
             let value = 0xAA;
             interpreter.registers[second_register] = value;
-            interpreter.handle_opcode(Opcode::BitShiftLeft(first_register, second_register));
+            interpreter.handle_opcode(&Opcode::BitShiftLeft(first_register, second_register));
             assert_eq!(interpreter.registers[first_register], value << 1, "Bit shift left failed.");
             assert_eq!(interpreter.registers[second_register], value, "Second register modified.");
             assert_eq!(interpreter.registers[REGISTER_F], 1, "Shift bit incorrectly not set");
 
             interpreter.registers[second_register] = interpreter.registers[first_register];
-            interpreter.handle_opcode(Opcode::BitShiftLeft(first_register, second_register));
+            interpreter.handle_opcode(&Opcode::BitShiftLeft(first_register, second_register));
             assert_eq!(interpreter.registers[first_register], value << 2, "Bit shift left failed.");
             assert_eq!(interpreter.registers[second_register], value << 1, "Second register modified.");
             assert_eq!(interpreter.registers[REGISTER_F], 0, "Shift bit incorrectly set");
 
-            interpreter.handle_opcode(Opcode::BitShiftLeft(REGISTER_F, second_register));
+            interpreter.handle_opcode(&Opcode::BitShiftLeft(REGISTER_F, second_register));
             assert_eq!(interpreter.registers[second_register], value << 1, "Second register modified.");
             assert_eq!(interpreter.registers[REGISTER_F], 0, "Shift bit incorrectly set");
         }
@@ -1401,7 +1397,7 @@ mod tests {
             let starting_address = 0x783;
             interpreter.registers[register] = value;
             interpreter.register_i = starting_address;
-            interpreter.handle_opcode(Opcode::BinaryCodedDecimal(register));
+            interpreter.handle_opcode(&Opcode::BinaryCodedDecimal(register));
             assert_eq!(interpreter.ram[starting_address as usize], 0x2, "Binary encoded decimal hundreds digit incorrect.");
             assert_eq!(interpreter.ram[(starting_address + 0x1) as usize], 0x1, "Binary encoded decimal tens digit incorrect.");
             assert_eq!(interpreter.ram[(starting_address + 0x2) as usize], 0x8, "Binary encoded decimal units digit incorrect.");
@@ -1418,13 +1414,13 @@ mod tests {
             let second_address = 0x432;
             let current_program_counter = original_program_counter;
             interpreter.program_counter = current_program_counter;
-            interpreter.handle_opcode(Opcode::CallAddr(first_address));
+            interpreter.handle_opcode(&Opcode::CallAddr(first_address));
             assert_eq!(interpreter.program_counter, first_address, "Program counter not updated.");
             assert_eq!(interpreter.stack[interpreter.stack_pointer - 1], current_program_counter, "Program counter not placed on the stack.");
             assert_eq!(interpreter.stack_pointer, 0x1, "Stack pointer not incremented.");
 
             let current_program_counter = first_address;
-            interpreter.handle_opcode(Opcode::SystemAddr(second_address));
+            interpreter.handle_opcode(&Opcode::SystemAddr(second_address));
             assert_eq!(interpreter.program_counter, second_address, "Program counter not updated.");
             assert_eq!(interpreter.stack[interpreter.stack_pointer - 1], current_program_counter, "Program counter not placed on the stack.");
             assert_eq!(interpreter.stack_pointer, 0x2, "Stack pointer not incremented.");
@@ -1440,13 +1436,13 @@ mod tests {
             interpreter.stack_pointer = 0x2;
             interpreter.stack[0x0] = bottom_address;
             interpreter.stack[0x1] = top_address;
-            interpreter.handle_opcode(Opcode::Return);
+            interpreter.handle_opcode(&Opcode::Return);
             assert_eq!(interpreter.program_counter, top_address, "Return from subroutine failed after one call.");
             assert_eq!(interpreter.stack_pointer, 0x1, "Stack pointer not decremented.");
             assert_eq!(interpreter.stack[interpreter.stack_pointer], top_address, "Top address on the stack modified.");
             assert_eq!(interpreter.stack[interpreter.stack_pointer - 1], bottom_address, "Bottom address on the stack modified.");
 
-            interpreter.handle_opcode(Opcode::Return);
+            interpreter.handle_opcode(&Opcode::Return);
             assert_eq!(interpreter.program_counter, bottom_address, "Return from subroutine failed after two calls.");
             assert_eq!(interpreter.stack_pointer, 0x0, "Stack pointer not decremented.");
             assert_eq!(interpreter.stack[interpreter.stack_pointer + 1], top_address, "Top address on the stack modified.");
@@ -1460,7 +1456,7 @@ mod tests {
             let register = 0x3;
             let value = 0xE;
             interpreter.registers[register] = value;
-            interpreter.handle_opcode(Opcode::SetIHexSpriteLocation(register));
+            interpreter.handle_opcode(&Opcode::SetIHexSpriteLocation(register));
             assert_eq!(interpreter.register_i, 0x46, "Register I not set correctly.");
             assert_eq!(interpreter.registers[register], value, "Register value modified.");
         }
@@ -1474,14 +1470,14 @@ mod tests {
             let other_key = 0x8;
             interpreter.registers[register] = value;
             interpreter.keyboard.insert(other_key);
-            interpreter.handle_opcode(Opcode::SkipKeyPressed(register));
+            interpreter.handle_opcode(&Opcode::SkipKeyPressed(register));
             assert_eq!(interpreter.program_counter, 0x0, "Program counter incremented incorrectly.");
             assert_eq!(interpreter.registers[register], value, "Register value modified.");
             assert!(interpreter.keyboard.contains(&other_key), "Keys pressed modified.");
             assert_eq!(interpreter.keyboard.len(), 0x1, "Number of keys pressed is incorrect.");
 
             interpreter.keyboard.insert(value);
-            interpreter.handle_opcode(Opcode::SkipKeyPressed(register));
+            interpreter.handle_opcode(&Opcode::SkipKeyPressed(register));
             assert_eq!(interpreter.program_counter, PROGRAM_COUNTER_INCREMENT, "Program counter not incremented.");
             assert_eq!(interpreter.registers[register], value, "Register value modified.");
             assert!(interpreter.keyboard.contains(&value), "Keys pressed modified.");
@@ -1499,7 +1495,7 @@ mod tests {
             interpreter.registers[register] = value;
             interpreter.keyboard.insert(value);
             interpreter.keyboard.insert(other_key);
-            interpreter.handle_opcode(Opcode::SkipKeyNotPressed(register));
+            interpreter.handle_opcode(&Opcode::SkipKeyNotPressed(register));
             assert_eq!(interpreter.program_counter, 0x0, "Program counter incremented incorrectly.");
             assert_eq!(interpreter.registers[register], value, "Register value modified.");
             assert!(interpreter.keyboard.contains(&value), "Keys pressed modified.");
@@ -1507,7 +1503,7 @@ mod tests {
             assert_eq!(interpreter.keyboard.len(), 0x2, "Number of keys pressed is incorrect.");
 
             interpreter.keyboard.remove(&value);
-            interpreter.handle_opcode(Opcode::SkipKeyNotPressed(register));
+            interpreter.handle_opcode(&Opcode::SkipKeyNotPressed(register));
             assert_eq!(interpreter.program_counter, PROGRAM_COUNTER_INCREMENT, "Program counter not incremented.");
             assert_eq!(interpreter.registers[register], value, "Register value modified.");
             assert!(interpreter.keyboard.contains(&other_key), "Keys pressed modified.");
@@ -1523,7 +1519,7 @@ mod tests {
             interpreter.program_counter = PROGRAM_START_ADDRESS;
             interpreter.ram[program_start_usize] = 0xAA;
             interpreter.ram[program_start_usize + 1] = 0xAA;
-            interpreter.handle_opcode(Opcode::LoadKeyPress(register));
+            interpreter.handle_opcode(&Opcode::LoadKeyPress(register));
             interpreter.handle_cycle();
             assert_eq!(interpreter.register_i, 0x0, "Opcode handled when execution should have been paused.");
             assert_eq!(interpreter.program_counter, PROGRAM_START_ADDRESS, "Program counter incremented incorrectly.");
@@ -1550,7 +1546,7 @@ mod tests {
             let mut interpreter = Interpreter::new();
 
             interpreter.drawing_buffer.iter_mut().for_each(|x| *x = random());
-            interpreter.handle_opcode(Opcode::ClearScreen);
+            interpreter.handle_opcode(&Opcode::ClearScreen);
             assert_eq!(interpreter.drawing_buffer, [false; DRAWING_BUFFER_SIZE], "Drawing buffer was not cleared.");
         }
 
@@ -1560,11 +1556,12 @@ mod tests {
 
             let first_register = 0x0;
             let second_register = 0x2;
-            interpreter.handle_opcode(Opcode::Draw(first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH));
+            interpreter.handle_opcode(&Opcode::Draw(first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH));
             assert!(interpreter.should_wait_for_display_refresh, "Not waiting for display refresh.");
             assert_eq!(interpreter.wait_for_display_refresh_data, (first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH), "Wrong data set to wait for display refresh.");
         }
 
+        #[allow(clippy::cast_possible_truncation)]
         #[test]
         fn draw_complete() {
             let mut interpreter = Interpreter::new();
@@ -1583,9 +1580,9 @@ mod tests {
             // Draw a regular sprite
             let ram_values = &HEXADECIMAL_DIGIT_SPRITES[HEXADECIMAL_DIGIT_SPRITE_LENGTH as usize..HEXADECIMAL_DIGIT_SPRITE_LENGTH as usize * 2];
             assert_eq!(interpreter.registers[REGISTER_F], 0x0, "Collision bit incorrectly set.");
-            for i in 0..HEXADECIMAL_DIGIT_SPRITE_LENGTH as usize {
+            for (i, ram_value) in ram_values.iter().enumerate() {
                 for j in 0..8 {
-                    assert_eq!(interpreter.drawing_buffer[i * SCREEN_WIDTH as usize + j], ((ram_values[i] >> (7 - j)) & 1) == 0x1, "Simple drawn value is incorrect.");
+                    assert_eq!(interpreter.drawing_buffer[i * SCREEN_WIDTH as usize + j], ((*ram_value >> (7 - j)) & 1) == 0x1, "Simple drawn value is incorrect.");
                 }
             }
 
@@ -1596,10 +1593,10 @@ mod tests {
             interpreter.registers[second_register] = second_value;
             interpreter.complete_draw(first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH);
             assert_eq!(interpreter.registers[REGISTER_F], 0x0, "Collision bit incorrectly set.");
-            for i in 0..HEXADECIMAL_DIGIT_SPRITE_LENGTH as usize {
+            for (i, ram_value) in ram_values.iter().enumerate() {
                 for j in 0..8 {
                     let drawing_buffer_index = ((i + second_value as usize) * SCREEN_WIDTH as usize) + first_value as usize + j;
-                    let target_value = if drawing_buffer_index >= DRAWING_BUFFER_SIZE { false } else { ((ram_values[i] >> (7 - j)) & 1) == 0x1 };
+                    let target_value = if drawing_buffer_index >= DRAWING_BUFFER_SIZE { false } else { ((*ram_value >> (7 - j)) & 1) == 0x1 };
                     assert_eq!(interpreter.drawing_buffer[drawing_buffer_index % DRAWING_BUFFER_SIZE], target_value, "Clipping drawn value is incorrect.");
                 }
             }
@@ -1611,10 +1608,10 @@ mod tests {
             interpreter.registers[second_register] = second_value;
             interpreter.complete_draw(first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH);
             assert_eq!(interpreter.registers[REGISTER_F], 0x0, "Collision bit incorrectly set.");
-            for i in 0..HEXADECIMAL_DIGIT_SPRITE_LENGTH as usize {
+            for (i, ram_value) in ram_values.iter().enumerate() {
                 for j in 0..8 {
                     let drawing_buffer_index = ((i + second_value as usize) * SCREEN_WIDTH as usize) + (first_value % SCREEN_WIDTH as u8) as usize + j;
-                    let target_value = ((ram_values[i] >> (7 - j)) & 1) == 0x1;
+                    let target_value = ((*ram_value >> (7 - j)) & 1) == 0x1;
                     assert_eq!(interpreter.drawing_buffer[drawing_buffer_index], target_value, "Wrapping drawn value is incorrect.");
                 }
             }

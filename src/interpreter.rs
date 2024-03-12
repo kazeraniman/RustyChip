@@ -263,7 +263,12 @@ impl<'a> Interpreter<'a> {
             Opcode::LoadRegisterI(address) => self.load_register_i(address),
             Opcode::JumpAddrV0(address) => self.jump_address_v0(address),
             Opcode::Random(register, value) => self.random(register, value),
-            Opcode::Draw(first_register, second_register, length) => self.draw(first_register, second_register, length),
+            Opcode::Draw(first_register, second_register, length) => {
+                match self.quirk_display_wait {
+                    DisplayWaitQuirk::Wait => self.draw(first_register, second_register, length),
+                    DisplayWaitQuirk::NoWait => self.complete_draw(first_register, second_register, length)
+                }
+            },
             Opcode::SkipKeyPressed(register) => self.skip_key_pressed(register),
             Opcode::SkipKeyNotPressed(register) => self.skip_key_not_pressed(register),
             Opcode::LoadDelayTimer(register) => self.load_delay_timer(register),
@@ -356,7 +361,7 @@ impl<'a> Interpreter<'a> {
                 MemoryIncrementQuirk::Increment => 0,
                 MemoryIncrementQuirk::NoIncrement => i
             };
-            
+
             self.registers[i] = self.ram[self.register_i as usize + index_adjustment];
             self.handle_memory_increment_quirk();
         }
@@ -698,7 +703,7 @@ mod tests {
         assert_eq!(reset_interpreter.registers[REGISTER_F], 0x0, "Register F not reset.");
         assert_eq!(no_reset_interpreter.registers[REGISTER_F], 0x1, "Register F reset.");
     }
-    
+
     #[test]
     fn memory_quirk() {
         let mut increment_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::Increment, DisplayWaitQuirk::default(), ClippingQuirk::default(), ShiftingQuirk::default(), JumpingQuirk::default());
@@ -716,9 +721,32 @@ mod tests {
 
         increment_interpreter.handle_opcode(Opcode::StoreRegisters(register));
         no_increment_interpreter.handle_opcode(Opcode::StoreRegisters(register));
-        
+
         assert_eq!(increment_interpreter.register_i, starting_address + register as u16 + 1, "Register I value not incremented.");
         assert_eq!(no_increment_interpreter.register_i, starting_address, "Register I value incremented.");
+    }
+
+    #[test]
+    fn display_wait_quirk() {
+        let mut wait_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::default(), DisplayWaitQuirk::Wait, ClippingQuirk::default(), ShiftingQuirk::default(), JumpingQuirk::default());
+        let mut no_wait_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::default(), DisplayWaitQuirk::NoWait, ClippingQuirk::default(), ShiftingQuirk::default(), JumpingQuirk::default());
+
+        let first_register = 0x0;
+        let second_register = 0x1;
+        let sprite = 0xAA;
+        let sprite_location = 0x999;
+        wait_interpreter.register_i = sprite_location;
+        no_wait_interpreter.register_i = sprite_location;
+        wait_interpreter.ram[sprite_location as usize] = sprite;
+        no_wait_interpreter.ram[sprite_location as usize] = sprite;
+        wait_interpreter.handle_opcode(Opcode::Draw(first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH));
+        no_wait_interpreter.handle_opcode(Opcode::Draw(first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH));
+        assert!(wait_interpreter.should_wait_for_display_refresh, "Not waiting for display refresh.");
+        assert!(!no_wait_interpreter.should_wait_for_display_refresh, "Waiting for display refresh.");
+        assert_eq!(wait_interpreter.wait_for_display_refresh_data, (first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH), "Wrong data set to wait for display refresh.");
+        assert_eq!(no_wait_interpreter.wait_for_display_refresh_data, (0x0, 0x0, 0x0), "Data set to wait for display refresh.");
+        assert!(!wait_interpreter.drawing_buffer[0], "Data drawn to buffer.");
+        assert!(no_wait_interpreter.drawing_buffer[0], "Data not drawn to buffer.");
     }
 
     #[cfg(test)]
@@ -1378,7 +1406,7 @@ mod tests {
             let second_register = 0x2;
             interpreter.handle_opcode(Opcode::Draw(first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH));
             assert!(interpreter.should_wait_for_display_refresh, "Not waiting for display refresh.");
-            assert_eq!(interpreter.wait_for_display_refresh_data, (first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH));
+            assert_eq!(interpreter.wait_for_display_refresh_data, (first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH), "Wrong data set to wait for display refresh.");
         }
 
         #[test]

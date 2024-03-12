@@ -225,6 +225,13 @@ impl<'a> Interpreter<'a> {
         Color::RGB(0x0, 0xFF, 0x0)
     }
 
+    fn handle_reset_quirk(&mut self) {
+        match self.quirk_reset_vf {
+            ResetVfQuirk::Reset => { self.registers[REGISTER_F] = 0x0; }
+            ResetVfQuirk::NoReset => {}
+        }
+    }
+
     fn handle_opcode(&mut self, opcode: Opcode) {
         match opcode {
             Opcode::ClearScreen => self.clear_screen(),
@@ -306,17 +313,17 @@ impl<'a> Interpreter<'a> {
 
     fn or(&mut self, first_register: usize, second_register: usize) {
         self.registers[first_register] |= self.registers[second_register];
-        self.registers[REGISTER_F] = 0x0;
+        self.handle_reset_quirk();
     }
 
     fn and(&mut self, first_register: usize, second_register: usize) {
         self.registers[first_register] &= self.registers[second_register];
-        self.registers[REGISTER_F] = 0x0;
+        self.handle_reset_quirk();
     }
 
     fn xor(&mut self, first_register: usize, second_register: usize) {
         self.registers[first_register] ^= self.registers[second_register];
-        self.registers[REGISTER_F] = 0x0;
+        self.handle_reset_quirk();
     }
 
     fn random(&mut self, register: usize, value: u8) {
@@ -638,6 +645,41 @@ mod tests {
         assert!(!interpreter.keyboard.contains(f_key_mapping), "Key press stored.");
         assert!(!interpreter.keyboard.contains(q_key_mapping), "Key press stored.");
         assert_eq!(interpreter.keyboard.len(), 0, "Wrong number of keypresses stored.");
+    }
+    
+    #[test]
+    fn reset_quirk() {
+        let mut reset_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::Reset, MemoryIncrementQuirk::default(), DisplayWaitQuirk::default(), ClippingQuirk::default(), ShiftingQuirk::default(), JumpingQuirk::default());
+        let mut no_reset_interpreter = Interpreter::new_with_sdl(None, None, ResetVfQuirk::NoReset, MemoryIncrementQuirk::default(), DisplayWaitQuirk::default(), ClippingQuirk::default(), ShiftingQuirk::default(), JumpingQuirk::default());
+
+        let first_register = 0x0;
+        let second_register = 0x1;
+        let first_value = 0xAA;
+        let second_value = 0xF0;
+        reset_interpreter.registers[first_register] = first_value;
+        reset_interpreter.registers[second_register] = second_value;
+        reset_interpreter.registers[REGISTER_F] = 0x1;
+        no_reset_interpreter.registers[first_register] = first_value;
+        no_reset_interpreter.registers[second_register] = second_value;
+        no_reset_interpreter.registers[REGISTER_F] = 0x1;
+        reset_interpreter.handle_opcode(Opcode::And(first_register, second_register));
+        no_reset_interpreter.handle_opcode(Opcode::And(first_register, second_register));
+        assert_eq!(reset_interpreter.registers[REGISTER_F], 0x0, "Register F not reset.");
+        assert_eq!(no_reset_interpreter.registers[REGISTER_F], 0x1, "Register F reset.");
+
+        reset_interpreter.registers[REGISTER_F] = 0x1;
+        no_reset_interpreter.registers[REGISTER_F] = 0x1;
+        reset_interpreter.handle_opcode(Opcode::Or(first_register, second_register));
+        no_reset_interpreter.handle_opcode(Opcode::Or(first_register, second_register));
+        assert_eq!(reset_interpreter.registers[REGISTER_F], 0x0, "Register F not reset.");
+        assert_eq!(no_reset_interpreter.registers[REGISTER_F], 0x1, "Register F reset.");
+
+        reset_interpreter.registers[REGISTER_F] = 0x1;
+        no_reset_interpreter.registers[REGISTER_F] = 0x1;
+        reset_interpreter.handle_opcode(Opcode::Xor(first_register, second_register));
+        no_reset_interpreter.handle_opcode(Opcode::Xor(first_register, second_register));
+        assert_eq!(reset_interpreter.registers[REGISTER_F], 0x0, "Register F not reset.");
+        assert_eq!(no_reset_interpreter.registers[REGISTER_F], 0x1, "Register F reset.");
     }
 
     #[cfg(test)]

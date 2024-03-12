@@ -3,12 +3,14 @@ use sdl2::{event::Event, keyboard::Keycode};
 use interpreter::Interpreter;
 use sdl2::audio::{AudioSpecDesired};
 use audio::SquareWave;
+use crate::quirks::{ResetVfQuirk, MemoryIncrementQuirk, DisplayWaitQuirk, ClippingQuirk, ShiftingQuirk, JumpingQuirk};
 
 pub mod opcodes;
 pub mod interpreter;
 pub mod audio;
+pub mod quirks;
 
-pub fn run(path: String, cycles_per_frame: u32) -> Result<(), String> {
+pub fn run(path: String, cycles_per_frame: u32, quirk_reset_vf: ResetVfQuirk, quirk_memory: MemoryIncrementQuirk, quirk_display_wait: DisplayWaitQuirk, quirk_clipping: ClippingQuirk, quirk_shifting: ShiftingQuirk, quirk_jumping: JumpingQuirk) -> Result<(), String> {
     // Read the game file
     let game_file = read_game_file(&path)
         .map_err(|err| err.to_string())?;
@@ -49,7 +51,7 @@ pub fn run(path: String, cycles_per_frame: u32) -> Result<(), String> {
     let mut event_pump = sdl_context.event_pump()?;
 
     // Prepare the emulator
-    let mut interpreter = Interpreter::new_with_sdl(Some(&mut canvas), Some(&audio_device));
+    let mut interpreter = Interpreter::new_with_sdl(Some(&mut canvas), Some(&audio_device), quirk_reset_vf, quirk_memory, quirk_display_wait, quirk_clipping, quirk_shifting, quirk_jumping);
     interpreter.load_game(game_file);
 
     // The main game loop

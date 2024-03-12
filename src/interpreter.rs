@@ -7,6 +7,7 @@ use sdl2::rect::Rect;
 use sdl2::render::WindowCanvas;
 use crate::audio::SquareWave;
 use crate::opcodes::{Opcode, OpcodeBytes};
+use crate::quirks::{ResetVfQuirk, MemoryIncrementQuirk, DisplayWaitQuirk, ClippingQuirk, ShiftingQuirk, JumpingQuirk};
 
 const PROGRAM_START_ADDRESS: u16 = 0x200;
 const PROGRAM_COUNTER_INCREMENT: u16 = 0x2;
@@ -56,11 +57,17 @@ pub struct Interpreter<'a> {
     wait_for_display_refresh_data: (usize, usize, u8),
     drawing_buffer: [bool; DRAWING_BUFFER_SIZE],
     audio_device: Option<&'a AudioDevice<SquareWave>>,
-    canvas: Option<&'a mut WindowCanvas>
+    canvas: Option<&'a mut WindowCanvas>,
+    quirk_reset_vf: ResetVfQuirk,
+    quirk_memory: MemoryIncrementQuirk,
+    quirk_display_wait: DisplayWaitQuirk,
+    quirk_clipping: ClippingQuirk,
+    quirk_shifting: ShiftingQuirk,
+    quirk_jumping: JumpingQuirk
 }
 
 impl<'a> Interpreter<'a> {
-    pub fn new_with_sdl(canvas: Option<&'a mut WindowCanvas>, audio_device: Option<&'a AudioDevice<SquareWave>>) -> Interpreter<'a> {
+    pub fn new_with_sdl(canvas: Option<&'a mut WindowCanvas>, audio_device: Option<&'a AudioDevice<SquareWave>>, quirk_reset_vf: ResetVfQuirk, quirk_memory: MemoryIncrementQuirk, quirk_display_wait: DisplayWaitQuirk, quirk_clipping: ClippingQuirk, quirk_shifting: ShiftingQuirk, quirk_jumping: JumpingQuirk) -> Interpreter<'a> {
         let mut ram = [0; 4096];
         for i in 0..HEXADECIMAL_DIGIT_SPRITES.len() {
             ram[i] = HEXADECIMAL_DIGIT_SPRITES[i];
@@ -82,7 +89,13 @@ impl<'a> Interpreter<'a> {
             wait_for_display_refresh_data: (0, 0, 0),
             drawing_buffer: [false; DRAWING_BUFFER_SIZE],
             canvas,
-            audio_device
+            audio_device,
+            quirk_reset_vf,
+            quirk_memory,
+            quirk_display_wait,
+            quirk_clipping,
+            quirk_shifting,
+            quirk_jumping
         };
 
         interpreter.clear_screen();
@@ -92,7 +105,7 @@ impl<'a> Interpreter<'a> {
 
     #[cfg(test)]
     fn new() -> Interpreter<'a> {
-        Self::new_with_sdl(None, None)
+        Self::new_with_sdl(None, None, ResetVfQuirk::default(), MemoryIncrementQuirk::default(), DisplayWaitQuirk::default(), ClippingQuirk::default(), ShiftingQuirk::default(), JumpingQuirk::default())
     }
 
     pub fn load_game(&mut self, game_data: Vec<u8>) {

@@ -52,6 +52,8 @@ pub struct Interpreter<'a> {
     keyboard: HashSet<u8>,
     should_wait_for_key: bool,
     wait_for_key_register: usize,
+    should_wait_for_display_refresh: bool,
+    wait_for_display_refresh_data: (usize, usize, u8),
     drawing_buffer: [bool; DRAWING_BUFFER_SIZE],
     audio_device: Option<&'a AudioDevice<SquareWave>>,
     canvas: Option<&'a mut WindowCanvas>
@@ -76,6 +78,8 @@ impl<'a> Interpreter<'a> {
             keyboard: HashSet::new(),
             should_wait_for_key: false,
             wait_for_key_register: 0,
+            should_wait_for_display_refresh: false,
+            wait_for_display_refresh_data: (0, 0, 0),
             drawing_buffer: [false; DRAWING_BUFFER_SIZE],
             canvas,
             audio_device
@@ -143,7 +147,7 @@ impl<'a> Interpreter<'a> {
     }
 
     pub fn handle_cycle(&mut self) {
-        if self.should_wait_for_key {
+        if self.should_wait_for_key || self.should_wait_for_display_refresh {
             return;
         }
 
@@ -176,6 +180,11 @@ impl<'a> Interpreter<'a> {
             }
 
             canvas.present();
+        }
+
+        if self.should_wait_for_display_refresh {
+            self.complete_draw(self.wait_for_display_refresh_data.0, self.wait_for_display_refresh_data.1, self.wait_for_display_refresh_data.2);
+            self.should_wait_for_display_refresh = false;
         }
     }
 
@@ -416,6 +425,11 @@ impl<'a> Interpreter<'a> {
     }
 
     fn draw(&mut self, first_register: usize, second_register: usize, length: u8) {
+        self.should_wait_for_display_refresh = true;
+        self.wait_for_display_refresh_data = (first_register, second_register, length);
+    }
+
+    fn complete_draw(&mut self, first_register: usize, second_register: usize, length: u8) {
         let base_x = self.registers[first_register];
         let base_y = self.registers[second_register];
         self.registers[REGISTER_F] = 0;
@@ -1260,6 +1274,17 @@ mod tests {
 
             let first_register = 0x0;
             let second_register = 0x2;
+            interpreter.handle_opcode(Opcode::Draw(first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH));
+            assert!(interpreter.should_wait_for_display_refresh, "Not waiting for display refresh.");
+            assert_eq!(interpreter.wait_for_display_refresh_data, (first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH));
+        }
+
+        #[test]
+        fn draw_complete() {
+            let mut interpreter = Interpreter::new();
+
+            let first_register = 0x0;
+            let second_register = 0x2;
             let first_value = 0x1;
             let second_value = 0x0;
             interpreter.registers[first_register] = first_value;
@@ -1267,7 +1292,7 @@ mod tests {
             interpreter.set_register_i_hex_sprite_location(first_register);
             let first_value = 0x0;
             interpreter.registers[first_register] = first_value;
-            interpreter.handle_opcode(Opcode::Draw(first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH));
+            interpreter.complete_draw(first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH);
 
             // Draw a regular sprite
             let ram_values = &HEXADECIMAL_DIGIT_SPRITES[HEXADECIMAL_DIGIT_SPRITE_LENGTH as usize..HEXADECIMAL_DIGIT_SPRITE_LENGTH as usize * 2];
@@ -1283,7 +1308,7 @@ mod tests {
             let second_value = (SCREEN_HEIGHT - 1) as u8;
             interpreter.registers[first_register] = first_value;
             interpreter.registers[second_register] = second_value;
-            interpreter.handle_opcode(Opcode::Draw(first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH));
+            interpreter.complete_draw(first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH);
             assert_eq!(interpreter.registers[REGISTER_F], 0x0, "Collision bit incorrectly set.");
             for i in 0..HEXADECIMAL_DIGIT_SPRITE_LENGTH as usize {
                 for j in 0..8 {
@@ -1299,7 +1324,7 @@ mod tests {
             interpreter.registers[second_register] = second_value;
             interpreter.set_register_i_hex_sprite_location(first_register);
             let new_ram_values = &HEXADECIMAL_DIGIT_SPRITES[0..HEXADECIMAL_DIGIT_SPRITE_LENGTH as usize];
-            interpreter.handle_opcode(Opcode::Draw(first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH));
+            interpreter.complete_draw(first_register, second_register, HEXADECIMAL_DIGIT_SPRITE_LENGTH);
             assert_eq!(interpreter.registers[REGISTER_F], 0x1, "Collision bit incorrectly not set.");
             for i in 0..HEXADECIMAL_DIGIT_SPRITE_LENGTH as usize {
                 let sprite_one_byte = ram_values[i];

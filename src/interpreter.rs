@@ -1,3 +1,6 @@
+//! A module to contain the functionality which actually emulates a CHIP-8.  
+//! The various bits of emulated hardware and the execution of opcodes and cycles happen here. 
+
 use std::collections::HashSet;
 
 use rand::random;
@@ -43,6 +46,7 @@ const HEXADECIMAL_DIGIT_SPRITES: [u8; 80] = [
     0xF0, 0x80, 0xF0, 0x80, 0x80
 ];
 
+/// Stores all the emulated hardware and state for the emulator.
 pub struct Interpreter<'a> {
     ram: [u8; 4096],
     registers: [u8; 16],
@@ -64,6 +68,13 @@ pub struct Interpreter<'a> {
 }
 
 impl<'a> Interpreter<'a> {
+    /// Creates a new instance with default values for the hardware and arguments for the audiovisual library components and command line arguments.
+    ///
+    /// # Parameters
+    ///
+    /// * `canvas` - Contains a canvas to which to draw the display (if it exists).
+    /// * `audio_device` - Contains a device which plays the single tone required by the CHIP-8 (if it exists).
+    /// * `quirk_config` - The enabled/disabled status of all the quirks.
     #[must_use]
     pub fn new_with_sdl(canvas: Option<&'a mut WindowCanvas>, audio_device: Option<&'a AudioDevice<SquareWave>>, quirk_config: QuirkConfig) -> Interpreter<'a> {
         let mut ram = [0; 4096];
@@ -94,11 +105,18 @@ impl<'a> Interpreter<'a> {
         interpreter
     }
 
+    /// Returns a new `QuirkConfig` with default values for all members.  
+    /// This is used solely for testing as there will be no audiovisual components there.
     #[cfg(test)]
     fn new() -> Interpreter<'a> {
         Self::new_with_sdl(None, None, QuirkConfig::new())
     }
 
+    /// Loads the provided game into memory at the expected location.  
+    /// Additionally sets the program counter to the start of the program to be ready for execution.
+    ///
+    /// # Parameters
+    /// * `game_data` - The bytes which were read from the game file to be loaded into memory.
     pub fn load_game(&mut self, game_data: &[u8]) {
         for (i, byte) in game_data.iter().enumerate() {
             self.ram[PROGRAM_START_ADDRESS as usize + i] = *byte;
@@ -107,6 +125,11 @@ impl<'a> Interpreter<'a> {
         self.program_counter = PROGRAM_START_ADDRESS;
     }
 
+    /// Returns the appropriate CHIP-8 key based on the physical key related to the event.
+    ///
+    /// # Parameters
+    ///
+    /// * `keycode` - The physical key.
     fn get_key_mapping(keycode: Keycode) -> Option<u8> {
         let key = match keycode {
             Keycode::Num1 => 0x1,
@@ -131,6 +154,12 @@ impl<'a> Interpreter<'a> {
         Some(key)
     }
 
+    /// Processes a pressed key and stores its state.  
+    /// In the event that we are currently waiting for a key press (see [`LoadKeyPress`](Opcode::LoadKeyPress)), sets this key as the one waiting for the associated release event.
+    ///
+    /// # Params
+    ///
+    /// * `keycode` - The physical key pressed.
     pub fn handle_key_press(&mut self, keycode: Keycode) {
         if let Some(key) = Self::get_key_mapping(keycode) {
             if self.should_wait_for_key {
@@ -141,6 +170,12 @@ impl<'a> Interpreter<'a> {
         }
     }
 
+    /// Processes a released key and stores its state.  
+    /// In the event that we are currently waiting for a key release (see [`LoadKeyPress`](Opcode::LoadKeyPress)), clear that behaviour to allow continuation if this is the correct key.
+    ///
+    /// # Params
+    ///
+    /// * `keycode` - The physical key released.
     pub fn handle_key_release(&mut self, keycode: Keycode) {
         if let Some(key) = Self::get_key_mapping(keycode) {
             self.keyboard.remove(&key);
@@ -150,6 +185,7 @@ impl<'a> Interpreter<'a> {
         }
     }
 
+    /// Processes a single instruction cycle.
     pub fn handle_cycle(&mut self) {
         if self.should_wait_for_key || self.should_wait_for_display_refresh {
             return;
@@ -161,6 +197,8 @@ impl<'a> Interpreter<'a> {
         self.handle_opcode(&opcode);
     }
 
+    /// Draws the contents of the drawing buffer to the display.  
+    /// This method also [decrements all timers](self.handle_timers) as they are linked to the framerate and decrease at the same rate.
     pub fn handle_frame(&mut self) {
         self.handle_timers();
         if let Some(canvas) = self.canvas.as_mut() {
@@ -195,6 +233,8 @@ impl<'a> Interpreter<'a> {
         }
     }
 
+    /// Decrements all timers.  
+    /// If the sound timer has just hit 0, stop playing the audio.
     fn handle_timers(&mut self) {
         let old_sound_timer = self.sound_timer;
         self.sound_timer = self.sound_timer.saturating_sub(1);
@@ -205,20 +245,25 @@ impl<'a> Interpreter<'a> {
         }
     }
 
+    /// Either pause or resume the audio based on the status of the sound timer.  
+    /// Sound should only play when the timer is > 0.
     fn set_audio_status(&self) {
         if let Some(audio_device) = self.audio_device {
             if self.sound_timer > 0 { audio_device.resume() } else { audio_device.pause() };
         }
     }
 
+    /// Returns the colour used to paint the background.
     fn get_bg_colour() -> Color {
         Color::RGB(0x0, 0x0, 0x0)
     }
 
+    /// Returns the colour used to paint the sprites. 
     fn get_fg_colour() -> Color {
         Color::RGB(0x0, 0xFF, 0x0)
     }
 
+    /// Conditionally resets register F based on the status of the [reset quirk](ResetVfQuirk).
     fn handle_reset_quirk(&mut self) {
         match self.quirk_config.reset_vf {
             ResetVfQuirk::Reset => { self.registers[REGISTER_F] = 0x0; }
@@ -226,6 +271,7 @@ impl<'a> Interpreter<'a> {
         }
     }
 
+    /// Conditionally increments register I based on the status of the [memory increment quirk](MemoryIncrementQuirk). 
     fn handle_memory_increment_quirk(&mut self) {
         match self.quirk_config.memory {
             MemoryIncrementQuirk::Increment => { self.register_i += 1; }
@@ -233,6 +279,11 @@ impl<'a> Interpreter<'a> {
         }
     }
 
+    /// Processes the provided opcode, handing off to the appropriate method.
+    ///
+    /// # Parameters
+    ///
+    /// * `opcode` - A reference to the opcode to process.
     fn handle_opcode(&mut self, opcode: &Opcode) {
         match opcode {
             Opcode::ClearScreen => self.clear_screen(),
@@ -277,66 +328,155 @@ impl<'a> Interpreter<'a> {
         }
     }
 
+    /// Handles the [`JumpAddr`](Opcode::JumpAddr) opcode, setting to the program counter to the provided address.  
+    /// Equivalent to: `PC = nnn`
+    ///
+    /// # Parameters
+    ///
+    /// * `address` - The address to which we want to jump.
     fn jump_addr(&mut self, address: u16) {
         self.program_counter = address;
     }
 
+    /// Handles the [`SkipRegisterEqualsValue`](Opcode::SkipRegisterEqualsValue) opcode, skipping the next instruction if the provided register contains the provided value.  
+    /// Equivalent to: `if Vx == kk`
+    ///
+    /// # Parameters
+    ///
+    /// * `register` - The register whose value we want to check.
+    /// * `value` - The value against which to check.
     fn skip_register_equals_value(&mut self, register: usize, value: u8) {
         if self.registers[register] == value {
             self.program_counter += PROGRAM_COUNTER_INCREMENT;
         }
     }
 
+    /// Handles the [`SkipRegisterNotEqualsValue`](Opcode::SkipRegisterNotEqualsValue) opcode, skipping the next instruction if the provided register doesn't contain the provided value.  
+    /// Equivalent to: `if Vx != kk`
+    ///
+    /// # Parameters
+    ///
+    /// * `register` - The register whose value we want to check.
+    /// * `value` - The value against which to check.
     fn skip_register_not_equals_value(&mut self, register: usize, value: u8) {
         if self.registers[register] != value {
             self.program_counter += PROGRAM_COUNTER_INCREMENT;
         }
     }
 
+    /// Handles the [`SkipRegistersEqual`](Opcode::SkipRegistersEqual) opcode, skipping the next instruction if the values of the provided registers match.  
+    /// Equivalent to: `if Vx == Vy`
+    ///
+    /// # Parameters
+    ///
+    /// * `first_register` - The first register whose value we want to check.
+    /// * `second_register` - The second register against which to check.
     fn skip_registers_equal(&mut self, first_register: usize, second_register: usize) {
         if self.registers[first_register] == self.registers[second_register] {
             self.program_counter += PROGRAM_COUNTER_INCREMENT;
         }
     }
 
+    /// Handles the [`SkipRegistersNotEqual`](Opcode::SkipRegistersNotEqual) opcode, skipping the next instruction if the values of the provided registers do not match.  
+    /// Equivalent to: `if Vx != Vy`
+    ///
+    /// # Parameters
+    ///
+    /// * `first_register` - The first register whose value we want to check.
+    /// * `second_register` - The second register against which to check.
     fn skip_registers_not_equal(&mut self, first_register: usize, second_register: usize) {
         if self.registers[first_register] != self.registers[second_register] {
             self.program_counter += PROGRAM_COUNTER_INCREMENT;
         }
     }
 
+    /// Handles the [`LoadValue`](Opcode::LoadValue) opcode, placing the provided value into the provided register.  
+    /// Equivalent to: `Vx = kk`
+    ///
+    /// # Parameters
+    ///
+    /// * `register` - The register into which we will place the value.
+    /// * `value` - The value to place into the register.
     fn load_value(&mut self, register: usize, value: u8) {
         self.registers[register] = value;
     }
 
+    /// Handles the [`AddValue`](Opcode::AddValue) opcode, adding the provided value to the that of the provided register, storing it back into that register.  
+    /// Equivalent to: `Vx += kk`
+    ///
+    /// # Parameters
+    ///
+    /// * `register` - The register into which we will place the sum.
+    /// * `value` - The value to add.
     fn add_value(&mut self, register: usize, value: u8) {
         self.registers[register] = ((u16::from(self.registers[register]) + u16::from(value)) & BYTE_MASK) as u8;
     }
 
+    /// Handles the [`LoadRegisterValue`](Opcode::LoadRegisterValue) opcode, placing the value of the second register into the first.  
+    /// Equivalent to: `Vx = Vy`
+    ///
+    /// # Parameters
+    ///
+    /// * `first_register` - The register into which we will place the value.
+    /// * `second_register` - The register from which we will read the value.
     fn load_register_value(&mut self, first_register: usize, second_register: usize) {
         self.registers[first_register] = self.registers[second_register];
     }
 
+    /// Handles the [`Or`](Opcode::Or) opcode, performing a binary OR operation on two registers and placing the result into the first.  
+    /// Equivalent to: `Vx |= Vy`
+    ///
+    /// # Parameters
+    ///
+    /// * `first_register` - The register into which we will place the result of the OR.
+    /// * `second_register` - The register with which to OR the value.
     fn or(&mut self, first_register: usize, second_register: usize) {
         self.registers[first_register] |= self.registers[second_register];
         self.handle_reset_quirk();
     }
 
+    /// Handles the [`And`](Opcode::And) opcode, performing a binary OR operation on two registers and placing the result into the first.  
+    /// Equivalent to: `Vx &= Vy`
+    ///
+    /// # Parameters
+    ///
+    /// * `first_register` - The register into which we will place the result of the OR.
+    /// * `second_register` - The register with which to OR the value.
     fn and(&mut self, first_register: usize, second_register: usize) {
         self.registers[first_register] &= self.registers[second_register];
         self.handle_reset_quirk();
     }
 
+    /// Handles the [`Xor`](Opcode::Xor) opcode, performing a binary XOR operation on two registers and placing the result into the first.  
+    /// Equivalent to: `Vx ^= Vy`
+    ///
+    /// # Parameters
+    ///
+    /// * `first_register` - The register into which we will place the result of the XOR.
+    /// * `second_register` - The register with which to XOR the value.
     fn xor(&mut self, first_register: usize, second_register: usize) {
         self.registers[first_register] ^= self.registers[second_register];
         self.handle_reset_quirk();
     }
 
+    /// Handles the [`Random`](Opcode::Random) opcode, performing a binary AND between the provided value and a randomly generated byte, placing the result in the provided register.  
+    /// Equivalent to: `Vx = rand() & kk`
+    ///
+    /// # Parameters
+    ///
+    /// * `register` - The register into which we will place the result.
+    /// * `value` - The value with which to AND the random value.
     fn random(&mut self, register: usize, value: u8) {
         let random_byte: u8 = random();
         self.registers[register] = random_byte & value;
     }
 
+    /// Handles the [`StoreRegisters`](Opcode::StoreRegisters) opcode, storing the values of the registers up to and including the provided one in memory at the address of register I.  
+    /// Equivalent to: `reg_dump(Vx, &I)`
+    ///
+    /// # Parameters
+    ///
+    /// * `register` - The register up to and including which we wish to store.
     fn store_registers(&mut self, register: usize) {
         for i in 0..=register {
             let index_adjustment = match self.quirk_config.memory {
@@ -349,6 +489,12 @@ impl<'a> Interpreter<'a> {
         }
     }
 
+    /// Handles the [`LoadRegisters`](Opcode::LoadRegisters) opcode, loading the values of the registers up to and including the provided one from memory at the address of register I.  
+    /// Equivalent to: `reg_load(Vx, &I)`
+    ///
+    /// # Parameters
+    ///
+    /// * `register` - The register up to and including which we wish to load.
     fn load_registers(&mut self, register: usize) {
         for i in 0..=register {
             let index_adjustment = match self.quirk_config.memory {
@@ -361,10 +507,22 @@ impl<'a> Interpreter<'a> {
         }
     }
 
+    /// Handles the [`LoadRegisterI`](Opcode::LoadRegisterI) opcode, placing the provided address into register I.  
+    /// Equivalent to: `I = nnn`
+    ///
+    /// # Parameters
+    ///
+    /// * `address` - The address to place into register I.
     fn load_register_i(&mut self, address: u16) {
         self.register_i = address;
     }
 
+    /// Handles the [`JumpAddrV0`](Opcode::JumpAddrV0) opcode, setting the program counter to the provided address added to the value stored in V0 (or VX depending on the status of the [`JumpingQuirk`](JumpingQuirk)).  
+    /// Equivalent to: `PC = V0 + nnn` or `PC = Vx + nnn`
+    ///
+    /// # Parameters
+    ///
+    /// * `address` - The address to use in the addition.
     fn jump_address_v0(&mut self, address: u16) {
         let target_register = match self.quirk_config.jumping {
             JumpingQuirk::V0 => 0,
@@ -373,23 +531,56 @@ impl<'a> Interpreter<'a> {
         self.jump_addr(address + u16::from(self.registers[target_register as usize]));
     }
 
+    /// Handles the [`LoadDelayTimer`](Opcode::LoadDelayTimer) opcode, placing the value of the delay timer into the provided register.  
+    /// Equivalent to: `Vx = get_delay()`
+    ///
+    /// # Parameters
+    ///
+    /// * `register` - The register into which to store.
     fn load_delay_timer(&mut self, register: usize) {
         self.registers[register] = self.delay_timer;
     }
 
+    /// Handles the [`SetDelayTimer`](Opcode::SetDelayTimer) opcode, placing the value of the provided register into the delay timer.  
+    /// Equivalent to: `delay_timer(Vx)`
+    ///
+    /// # Parameters
+    ///
+    /// * `register` - The register from which to read the value.
     fn set_delay_timer(&mut self, register: usize) {
         self.delay_timer = self.registers[register];
     }
 
+    /// Handles the [`SetSoundTimer`](Opcode::SetSoundTimer) opcode, placing the value of the provided register into the sound timer.  
+    /// This will also resume audio playback if the value is sufficiently large (see [`set_sound_timer`](self.set_sound_timer)).  
+    /// Equivalent to: `sound_timer(Vx)`
+    ///
+    /// # Parameters
+    ///
+    /// * `register` - The register from which to read the value.
     fn set_sound_timer(&mut self, register: usize) {
         self.sound_timer = self.registers[register];
         self.set_audio_status();
     }
 
+    /// Handles the [`AddRegisterI`](Opcode::AddRegisterI) opcode, adding the value of the provided register to register I.  
+    /// Equivalent to: `I += Vx`
+    ///
+    /// # Parameters
+    ///
+    /// * `register` - The register from which to read the value.
     fn add_register_i(&mut self, register: usize) {
         self.register_i += u16::from(self.registers[register]);
     }
 
+    /// Handles the [`AddRegisters`](Opcode::AddRegisters) opcode, adding the values of the provided registers together and storing the result in the first.  
+    /// This will set register F to 1 in the case of an overflow, and 0 otherwise.  
+    /// Equivalent to: `Vx += Vy`
+    ///
+    /// # Parameters
+    ///
+    /// * `first_register` - The register into which to store the result.
+    /// * `second_register` - The register which contains the value to add.
     #[allow(clippy::cast_possible_truncation)]
     fn add_registers(&mut self, first_register: usize, second_register: usize) {
         let sum: u16 = u16::from(self.registers[first_register]) + u16::from(self.registers[second_register]);
@@ -398,12 +589,30 @@ impl<'a> Interpreter<'a> {
         self.registers[REGISTER_F] = u8::from(sum > max_u8);
     }
 
+    /// Handles the [`SubtractFromFirstRegister`](Opcode::SubtractFromSecondRegister) and [`SubtractFromSecondRegister`](Opcode::SubtractFromSecondRegister) opcodes, subtracting the value of one register from another and storing the result in the provided register.  
+    /// This will set register F to 1 in the case of no borrow, and 0 otherwise.  
+    /// Equivalent to: `Vx -= Vy` or `Vy -= Vx`
+    ///
+    /// # Parameters
+    ///
+    /// * `minuend_register` - The register from which to subtract.
+    /// * `subtrahend_register` - The register with the value we are subtracting.
+    /// * `result_register` - The register into which to store the result.
     fn bounded_subtraction(&mut self, minuend_register: usize, subtrahend_register: usize, result_register: usize) {
         let (difference, did_underflow) = self.registers[minuend_register].overflowing_sub(self.registers[subtrahend_register]);
         self.registers[result_register] = difference;
         self.registers[REGISTER_F] = u8::from(!did_underflow);
     }
 
+    /// Handles the [`BitShiftRight`](Opcode::BitShiftRight) opcode, performing a bitshift right of the provided register and storing the result in the first.  
+    /// This will set register F to 1 in the case of a bit running off, and 0 otherwise.
+    /// The register which holds the value to shift will depend on the status of the [shifting quirk](ShiftingQuirk).  
+    /// Equivalent to: `Vx >>= 1` or `Vx = Vy >> 1`
+    ///
+    /// # Parameters
+    ///
+    /// * `first_register` - The register into which to store the result (and possibly the value to shift).
+    /// * `second_register` - The register which possibly contains the value to shift.
     fn bit_shift_right(&mut self, first_register: usize, second_register: usize) {
         let target_shift_register = match self.quirk_config.shifting {
             ShiftingQuirk::Vy => second_register,
@@ -414,6 +623,15 @@ impl<'a> Interpreter<'a> {
         self.registers[REGISTER_F] = will_bit_run_off;
     }
 
+    /// Handles the [`BitShiftLeft`](Opcode::BitShiftLeft) opcode, performing a bitshift left of the provided register and storing the result in the first.  
+    /// This will set register F to 1 in the case of a bit running off, and 0 otherwise.
+    /// The register which holds the value to shift will depend on the status of the [shifting quirk](ShiftingQuirk).  
+    /// Equivalent to: `Vx <<= 1` or `Vx = Vy << 1`
+    ///
+    /// # Parameters
+    ///
+    /// * `first_register` - The register into which to store the result (and possibly the value to shift).
+    /// * `second_register` - The register which possibly contains the value to shift.
     fn bit_shift_left(&mut self, first_register: usize, second_register: usize) {
         let target_shift_register = match self.quirk_config.shifting {
             ShiftingQuirk::Vy => second_register,
@@ -424,6 +642,12 @@ impl<'a> Interpreter<'a> {
         self.registers[REGISTER_F] = will_bit_run_off;
     }
 
+    /// Handles the [`BinaryCodedDecimal`](Opcode::BinaryCodedDecimal) opcode, storing the binary coded decimal (digits of the value in decimal) into memory starting at the address stored in register I.  
+    /// Equivalent to: `*(I) = BCD(3); *(I+1) = BCD(2); *(I+2) = BCD(1);`
+    ///
+    /// # Parameters
+    ///
+    /// * `register` - The register which holds the value we wish to store.
     fn binary_coded_decimal(&mut self, register: usize) {
         let mut value = self.registers[register];
 
@@ -433,38 +657,76 @@ impl<'a> Interpreter<'a> {
         }
     }
 
+    /// Handles the [`CallAddr`](Opcode::CallAddr) opcode, calling the subroutine at the provided address.  
+    /// The current address is stored onto the stack for returning.  
+    /// Equivalent to: `*(0xnnn)()`
+    ///
+    /// # Parameters
+    ///
+    /// * `address` - The address of the target subroutine.
     fn call_addr(&mut self, address: u16) {
         self.stack[self.stack_pointer] = self.program_counter;
         self.stack_pointer += 1;
         self.program_counter = address;
     }
 
+    /// Handles the [`Return`](Opcode::Return) opcode, returning from the current subroutine.  
+    /// We return to the most recently stored address on the stack.  
+    /// Equivalent to: `return;`
     fn return_from_subroutine(&mut self) {
         self.program_counter = self.stack[self.stack_pointer - 1];
         self.stack_pointer -= 1;
     }
 
+    /// Handles the [`SetIHexSpriteLocation`](Opcode::SetIHexSpriteLocation) opcode, storing the address of the provided register's value's hex sprite into register I.  
+    /// Equivalent to: `I = sprite_addr[Vx]`  
+    ///
+    /// # Parameters
+    ///
+    /// * `register` - The register which contains the value whose sprite we will store.
     fn set_register_i_hex_sprite_location(&mut self, register: usize) {
         self.register_i = u16::from(self.registers[register] * HEXADECIMAL_DIGIT_SPRITE_LENGTH);
     }
 
+    /// Handles the [`SkipKeyPressed`](Opcode::SkipKeyPressed) opcode, skipping the next instruction if the provided key is currently pressed.  
+    /// Equivalent to: `if key() == Vx`
+    ///
+    /// # Parameters
+    ///
+    /// * `register` - The register which contains the key we are checking.
     fn skip_key_pressed(&mut self, register: usize) {
         if self.keyboard.contains(&self.registers[register]) {
             self.program_counter += PROGRAM_COUNTER_INCREMENT;
         }
     }
 
+    /// Handles the [`SkipKeyNotPressed`](Opcode::SkipKeyNotPressed) opcode, skipping the next instruction if the provided key is not currently pressed.  
+    /// Equivalent to: `if key() != Vx`
+    ///
+    /// # Parameters
+    ///
+    /// * `register` - The register which contains the key we are checking.
     fn skip_key_not_pressed(&mut self, register: usize) {
         if !self.keyboard.contains(&self.registers[register]) {
             self.program_counter += PROGRAM_COUNTER_INCREMENT;
         }
     }
 
+    /// Handles the [`LoadKeyPress`](Opcode::LoadKeyPress) opcode, halting further processing until a key is pressed (and released).  
+    /// The key which is pressed is stored into the provided register.  
+    /// Equivalent to: `Vx = get_key()`
+    ///
+    /// # Parameters
+    ///
+    /// * `register` - The register which will store the pressed key.
     fn load_key_press(&mut self, register: usize) {
         self.should_wait_for_key = true;
         self.wait_for_key_register = register;
     }
 
+    /// Handles the [`ClearScreen`](Opcode::ClearScreen) opcode, wiping all the data in the drawing buffer.  
+    /// Note that the display is not actually updated until the refresh rate is triggered.  
+    /// Equivalent to: `disp_clear()`
     fn clear_screen(&mut self) {
         self.drawing_buffer.fill(false);
         if let Some(canvas) = self.canvas.as_mut() {
@@ -473,11 +735,30 @@ impl<'a> Interpreter<'a> {
         }
     }
 
+    /// Halts further processing until the display is refreshed, upon which time the sprite starting at register I in memory with the provided height will be drawn at the coordinates of the provided registers.  
+    /// This method will be called depending on the status of the [display wait quirk](DisplayWaitQuirk).
+    ///
+    /// # Parameters
+    ///
+    /// * `first_register` - The X coordinate of the drawn sprite.
+    /// * `second_register` - The Y coordinate of the drawn sprite.
+    /// * `length` - The number of bytes to specify the sprite, equating to its drawn height.
     fn draw(&mut self, first_register: usize, second_register: usize, length: u8) {
         self.should_wait_for_display_refresh = true;
         self.wait_for_display_refresh_data = (first_register, second_register, length);
     }
 
+    /// Handles the [`Draw`](Opcode::Draw) opcode, drawing the sprite starting at register I in memory with the provided height at the coordinates of the provided registers.
+    /// This will set register F to 1 in the case of a pixel being turned off by the draw operation (as the draw is an XOR, this will occur if the pixel was on, and we are drawing over it again with an "on"), and 0 otherwise.  
+    /// This method will be called directly or indirectly depending on the status of the [display wait quirk](DisplayWaitQuirk).  
+    /// The sprite will either be clipped or wrap around the screen depending on the status of the [clipping quirk](ClippingQuirk).  
+    /// Equivalent to: `draw(Vx, Vy, n)`
+    ///
+    /// # Parameters
+    ///
+    /// * `first_register` - The X coordinate of the drawn sprite.
+    /// * `second_register` - The Y coordinate of the drawn sprite.
+    /// * `length` - The number of bytes to specify the sprite, equating to its drawn height.
     fn complete_draw(&mut self, first_register: usize, second_register: usize, length: u8) {
         let base_x = u32::from(self.registers[first_register]) % SCREEN_WIDTH;
         let base_y = u32::from(self.registers[second_register]) % SCREEN_HEIGHT;

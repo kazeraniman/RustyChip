@@ -1,3 +1,8 @@
+//! # `RustyChip`
+//!
+//! `rusty_chip` is an implementation of a CHIP-8 emulator written in Rust.  
+//! It is a first project in Rust for the author and as such is primarily a learning experience.
+
 use std::{fs, io, time::Duration};
 
 use sdl2::{event::Event, keyboard::Keycode};
@@ -15,6 +20,12 @@ pub mod quirks;
 
 /// Runs the actual emulator.
 /// Returns either an `OK` signifying the process ended successfully or an `Err` containing a `String` which mentions the issue.
+///
+/// # Parameters
+///
+/// * `path` - The path to the chosen game.
+/// * `cycles_per_frame` - The number of instruction cycles to run in the emulator per frame (the emulator runs at 60 fps).
+/// * `quirk_config` - The enabled/disabled status of all the quirks.
 ///
 /// # Errors
 ///
@@ -101,6 +112,11 @@ pub fn run(path: &str, cycles_per_frame: u32, quirk_config: QuirkConfig) -> Resu
     Ok(())
 }
 
+/// Returns the byte contents of the provided game file, or an `io::Error` if the read fails.
+///
+/// # Errors
+///
+/// Returns an `Err` if the file fails to be read.
 fn read_game_file(path: &str) -> io::Result<Vec<u8>> {
     fs::read(path)
 }

@@ -6,6 +6,7 @@ use rusty_chip::quirks::{ClippingQuirk, DisplayWaitQuirk, JumpingQuirk, MemoryIn
 
 const CYCLES_PER_FRAME: u32 = 10;
 
+/// Holds the information to be parsed from the command line arguments.
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Cli {

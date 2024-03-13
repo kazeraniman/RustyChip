@@ -1,3 +1,6 @@
+//! A module to contain the types and operations related to determining opcodes.  
+//! For more information on CHIP-8 opcodes, please see [this section](https://en.wikipedia.org/wiki/CHIP-8#Opcode_table) of the wikipedia page.
+
 use std::fmt::{Display, Formatter};
 
 const CLEAR_SCREEN_OPCODE_FIRST_BYTE: u8 = 0x00;
@@ -7,45 +10,116 @@ const RETURN_OPCODE_OPCODE_SECOND_BYTE: u8 = 0xEE;
 const LOWER_NIBBLE_MASK: u8 = 0xF;
 const UPPER_NIBBLE_MASK: u8 = 0xF0;
 
+/// Denotes a particular opcode and stores the necessary information to process it.
 #[derive(PartialEq, Debug)]
 pub enum Opcode {
+    /// 0nnn
     SystemAddr(u16),
+
+    /// 00E0
     ClearScreen,
+
+    /// 00EE
     Return,
+
+    /// 1nnn
     JumpAddr(u16),
+
+    /// 2nnn
     CallAddr(u16),
+
+    /// 3xkk
     SkipRegisterEqualsValue(usize, u8),
+
+    /// 4xkk
     SkipRegisterNotEqualsValue(usize, u8),
+
+    /// 5xy0
     SkipRegistersEqual(usize, usize),
+
+    /// 6xkk
     LoadValue(usize, u8),
+
+    /// 7xkk
     AddValue(usize, u8),
+
+    /// 8xy0
     LoadRegisterValue(usize, usize),
+
+    /// 8xy1
     Or(usize, usize),
+
+    /// 8xy2
     And(usize, usize),
+
+    /// 8xy3
     Xor(usize, usize),
+
+    /// 8xy4
     AddRegisters(usize, usize),
+
+    /// 8xy5
     SubtractFromFirstRegister(usize, usize),
+
+    /// 8xy6
     BitShiftRight(usize, usize),
+
+    /// 8xy7
     SubtractFromSecondRegister(usize, usize),
+
+    /// 8xyE
     BitShiftLeft(usize, usize),
+
+    /// 9xy0
     SkipRegistersNotEqual(usize, usize),
+
+    /// Annn
     LoadRegisterI(u16),
+
+    /// Bnnn
     JumpAddrV0(u16),
+
+    /// Cxkk
     Random(usize, u8),
+
+    /// Dxyn
     Draw(usize, usize, u8),
+
+    /// Ex9E
     SkipKeyPressed(usize),
+
+    /// ExA1
     SkipKeyNotPressed(usize),
+
+    /// Fx07
     LoadDelayTimer(usize),
+
+    /// Fx0A
     LoadKeyPress(usize),
+
+    /// Fx15
     SetDelayTimer(usize),
+
+    /// Fx18
     SetSoundTimer(usize),
+
+    /// Fx1E
     AddRegisterI(usize),
+
+    /// Fx29
     SetIHexSpriteLocation(usize),
+
+    /// Fx33
     BinaryCodedDecimal(usize),
+
+    /// Fx55
     StoreRegisters(usize),
+
+    /// Fx65
     LoadRegisters(usize)
 }
 
+/// Stores the information necessary to determine an [Opcode](Opcode) from a pair of bytes read from memory. 
 pub struct OpcodeBytes {
     first_byte: u8,
     second_byte: u8,
@@ -55,7 +129,7 @@ pub struct OpcodeBytes {
 
 impl OpcodeBytes {
     /// Returns an opcode-convertible structure from a slice of `u8`.
-    /// The resulting structure can be used to get a proper `Opcode`.
+    /// The resulting structure can be used to get a proper [Opcode](Opcode).
     ///
     /// # Arguments
     ///
@@ -76,28 +150,49 @@ impl OpcodeBytes {
         }
     }
 
+    /// Returns a `u8` containing the first 4 bits of a byte.
+    ///
+    /// # Parameters
+    ///
+    /// * `byte` - The byte from which to read the nibble.
     fn get_upper_nibble_u8(byte: u8) -> u8 {
         (byte & UPPER_NIBBLE_MASK) >> 4
     }
 
+    /// Returns a `u8` containing the last 4 bits of a byte.
+    ///
+    /// # Parameters
+    ///
+    /// * `byte` - The byte from which to read the nibble.
     fn get_lower_nibble_u8(byte: u8) -> u8 {
         byte & LOWER_NIBBLE_MASK
     }
 
+    /// Returns a `usize` containing the first 4 bits of a byte.
+    ///
+    /// # Parameters
+    ///
+    /// * `byte` - The byte from which to read the nibble.
     fn get_upper_nibble(byte: u8) -> usize {
         Self::get_upper_nibble_u8(byte) as usize
     }
 
+    /// Returns a `usize` containing the last 4 bits of a byte.
+    ///
+    /// # Parameters
+    ///
+    /// * `byte` - The byte from which to read the nibble.
     fn get_lower_nibble(byte: u8) -> usize {
         Self::get_lower_nibble_u8(byte) as usize
     }
 
+    /// Returns the 12-bit address contained in an opcode as a `u16`.
     #[allow(clippy::cast_possible_truncation)]
     fn get_addr(&self) -> u16 {
         ((Self::get_lower_nibble(self.first_byte) as u16) << 8) + (u16::from(self.second_byte))
     }
 
-    /// Returns a proper `Opcode` with the data needed to handle it.
+    /// Returns a proper [Opcode](Opcode) with the data needed to handle it.
     ///
     /// # Panics
     ///

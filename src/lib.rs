@@ -6,6 +6,7 @@
 use std::{fs, io, time::Duration};
 use std::io::ErrorKind;
 
+use rfd::FileDialog;
 use sdl2::{event::Event, keyboard::Keycode};
 use sdl2::audio::AudioSpecDesired;
 
@@ -86,6 +87,17 @@ pub fn run(path: &Option<String>, cycles_per_frame: u32, quirk_config: QuirkConf
                 Event::Quit { .. } |
                 Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
                     break 'game_loop;
+                },
+                Event::KeyDown { keycode: Some(Keycode::L), .. } => {
+                    let path = FileDialog::new()
+                        .add_filter("CHIP-8", &["ch8", "chip8"])
+                        .set_directory("games")
+                        .pick_file();
+                    if let Some(path) = path {
+                        if let Some(path) = path.to_str() {
+                            load_game_file(&mut interpreter, path)?;
+                        }
+                    }
                 },
                 Event::KeyDown { keycode: Some(keycode), .. } => {
                     interpreter.handle_key_press(keycode);

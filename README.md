@@ -22,10 +22,11 @@ Please keep in mind that this will result in a Linux-style for the window.
 ## Running
 As expected, the standard `cargo` commands are all that's necessary. Run `cargo run -- --help` to get an idea of the options available. This is especially true due to all the quirk flags available. Please note that different games will work/not work depending on the quirk combinations. I have picked the default options based on the expectations in the testing suite. For more information on quirks, please see [the testing suite](#testing-suite) section.  
 The simplest structure is `cargo run -- <path to the game file>`.  
-When the emulator is open, game files can be dragged onto the window in order to load them.
+When the emulator is open, game files can be dragged onto the window in order to load them, or the L key can be pressed for a file picker that starts in the `games` directory.
 
 ## Controls
-Aside from the actual game controls, you may close the window or press ESC to stop the emulator.
+Aside from the actual game controls, you may close the window or press `ESC` to stop the emulator.  
+You may open a file picker which starts in the `games` directory by pressing `L`.
 
 When it comes to the game controls, I have put the mapping I used down below, but each game has its own controls and I'm sad to say your guess is as good as mine there.
 
@@ -86,4 +87,4 @@ Aside from my own tests, I used [Timendus' chip8-test-suite](https://github.com/
 [Cowgod's CHIP-8 Technical Reference](http://devernay.free.fr/hacks/chip8/C8TECH10.HTM)
 
 ## Assorted Thoughts
-- I could have used a config file rather than command line arguments and it would have been cleaner but I wanted to get a feel for how command line arguments can be done with `clap` as it seems like a useful crate moving forward.
+- I could have used a config file rather than command line arguments, and it would have been cleaner, but I wanted to get a feel for how command line arguments can be done with `clap` as it seems like a useful crate moving forward.

@@ -14,6 +14,12 @@ use crate::audio::SquareWave;
 use crate::opcodes::{Opcode, OpcodeBytes};
 use crate::quirks::{ClippingQuirk, DisplayWaitQuirk, JumpingQuirk, MemoryIncrementQuirk, QuirkConfig, ResetVfQuirk, ShiftingQuirk};
 
+pub const SCALED_WIDTH: u32 = SCREEN_WIDTH * SCREEN_SCALE;
+pub const SCALED_HEIGHT: u32 = SCREEN_HEIGHT * SCREEN_SCALE;
+
+const RAM_SIZE: usize = 4096;
+const STACK_SIZE: usize = 16;
+const REGISTERS_SIZE: usize = 16;
 const PROGRAM_START_ADDRESS: u16 = 0x200;
 const PROGRAM_COUNTER_INCREMENT: u16 = 0x2;
 const BYTE_MASK: u16 = u8::MAX as u16;
@@ -24,10 +30,9 @@ const SCREEN_WIDTH: u32 = 64;
 const SCREEN_HEIGHT: u32 = 32;
 const SCREEN_SCALE: u32 = 10;
 const DRAWING_BUFFER_SIZE: usize = (SCREEN_WIDTH * SCREEN_HEIGHT) as usize;
-pub const SCALED_WIDTH: u32 = SCREEN_WIDTH * SCREEN_SCALE;
-pub const SCALED_HEIGHT: u32 = SCREEN_HEIGHT * SCREEN_SCALE;
 const HEXADECIMAL_DIGIT_SPRITE_LENGTH: u8 = 0x5;
-const HEXADECIMAL_DIGIT_SPRITES: [u8; 80] = [
+const HEXADECIMAL_DIGIT_SPRITES_LENGTH: usize = 80;
+const HEXADECIMAL_DIGIT_SPRITES: [u8; HEXADECIMAL_DIGIT_SPRITES_LENGTH] = [
     0xF0, 0x90, 0x90, 0x90, 0xF0,
     0x20, 0x60, 0x20, 0x20, 0x70,
     0xF0, 0x10, 0xF0, 0x80, 0xF0,
@@ -48,14 +53,15 @@ const HEXADECIMAL_DIGIT_SPRITES: [u8; 80] = [
 
 /// Stores all the emulated hardware and state for the emulator.
 pub struct Interpreter<'a> {
-    ram: [u8; 4096],
-    registers: [u8; 16],
+    is_running: bool,
+    ram: [u8; RAM_SIZE],
+    registers: [u8; REGISTERS_SIZE],
     register_i: u16,
     delay_timer: u8,
     sound_timer: u8,
     program_counter: u16,
     stack_pointer: usize,
-    stack: [u16; 16],
+    stack: [u16; STACK_SIZE],
     keyboard: HashSet<u8>,
     should_wait_for_key: bool,
     wait_for_key_register: usize,
@@ -77,18 +83,19 @@ impl<'a> Interpreter<'a> {
     /// * `quirk_config` - The enabled/disabled status of all the quirks.
     #[must_use]
     pub fn new_with_sdl(canvas: Option<&'a mut WindowCanvas>, audio_device: Option<&'a AudioDevice<SquareWave>>, quirk_config: QuirkConfig) -> Interpreter<'a> {
-        let mut ram = [0; 4096];
+        let mut ram = [0; RAM_SIZE];
         ram[..HEXADECIMAL_DIGIT_SPRITES.len()].copy_from_slice(&HEXADECIMAL_DIGIT_SPRITES[..]);
 
         let mut interpreter = Interpreter {
+            is_running: false,
             ram,
-            registers: [0; 16],
+            registers: [0; REGISTERS_SIZE],
             register_i: 0,
             delay_timer: 0,
             sound_timer: 0,
             program_counter: 0,
             stack_pointer: 0,
-            stack: [0; 16],
+            stack: [0; STACK_SIZE],
             keyboard: HashSet::new(),
             should_wait_for_key: false,
             wait_for_key_register: 0,
@@ -108,21 +115,43 @@ impl<'a> Interpreter<'a> {
     /// Returns a new `QuirkConfig` with default values for all members.  
     /// This is used solely for testing as there will be no audiovisual components there.
     #[cfg(test)]
-    fn new() -> Interpreter<'a> {
-        Self::new_with_sdl(None, None, QuirkConfig::new())
+    #[must_use]
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Interpreter<'a> {
+        let mut interpreter = Self::new_with_sdl(None, None, QuirkConfig::new());
+        interpreter.is_running = true;
+
+        interpreter
     }
 
     /// Loads the provided game into memory at the expected location.  
-    /// Additionally sets the program counter to the start of the program to be ready for execution.
+    /// Additionally, sets the program counter to the start of the program to be ready for execution.  
+    /// All other values are set to their defaults to allow for repeated loads of games.
     ///
     /// # Parameters
     /// * `game_data` - The bytes which were read from the game file to be loaded into memory.
     pub fn load_game(&mut self, game_data: &[u8]) {
+        self.ram[HEXADECIMAL_DIGIT_SPRITES_LENGTH..].fill(0);
         for (i, byte) in game_data.iter().enumerate() {
             self.ram[PROGRAM_START_ADDRESS as usize + i] = *byte;
         }
 
+        self.registers.fill(0);
+        self.register_i = 0;
+        self.delay_timer = 0;
+        self.sound_timer = 0;
+        self.stack_pointer = 0;
+        self.stack.fill(0);
+        self.keyboard.clear();
+        self.should_wait_for_key = false;
+        self.wait_for_key_register = 0;
+        self.should_wait_for_display_refresh = false;
+        self.wait_for_display_refresh_data = (0, 0, 0);
+        self.set_audio_status();
+        self.clear_screen();
+
         self.program_counter = PROGRAM_START_ADDRESS;
+        self.is_running = true;
     }
 
     /// Returns the appropriate CHIP-8 key based on the physical key related to the event.
@@ -187,7 +216,7 @@ impl<'a> Interpreter<'a> {
 
     /// Processes a single instruction cycle.
     pub fn handle_cycle(&mut self) {
-        if self.should_wait_for_key || self.should_wait_for_display_refresh {
+        if !self.is_running || self.should_wait_for_key || self.should_wait_for_display_refresh {
             return;
         }
 
@@ -197,9 +226,13 @@ impl<'a> Interpreter<'a> {
         self.handle_opcode(&opcode);
     }
 
-    /// Draws the contents of the drawing buffer to the display.  
+    /// Draws the contents of the drawing buffer to the display.
     /// This method also [decrements all timers](self.handle_timers) as they are linked to the framerate and decrease at the same rate.
     pub fn handle_frame(&mut self) {
+        if !self.is_running {
+            return;
+        }
+
         self.handle_timers();
         if let Some(canvas) = self.canvas.as_mut() {
             canvas.set_draw_color(Interpreter::get_bg_colour());
@@ -813,12 +846,13 @@ mod tests {
     #[test]
     fn create_interpreter() {
         let interpreter = Interpreter::new();
+        assert!(interpreter.is_running, "Testing interpreter not running.");
         assert_eq!(interpreter.register_i, 0, "Register I initialized incorrectly.");
         assert_eq!(interpreter.delay_timer, 0, "Delay timer initialized incorrectly.");
         assert_eq!(interpreter.sound_timer, 0, "Sound timer initialized incorrectly.");
         assert_eq!(interpreter.program_counter, 0, "Program counter initialized incorrectly.");
         assert_eq!(interpreter.stack_pointer, 0, "Stack pointer initialized incorrectly.");
-        assert_eq!(interpreter.keyboard.len(), 0, "Keyboard initialized incorrectly.");
+        assert!(interpreter.keyboard.is_empty(), "Keyboard initialized incorrectly.");
         assert!(!interpreter.should_wait_for_key, "Should wait for key initialized incorrectly.");
         assert_eq!(interpreter.wait_for_key_register, 0, "Wait for key register initialized incorrectly.");
         assert!(!interpreter.should_wait_for_display_refresh, "Wait for display refresh initialized incorrectly.");
@@ -837,28 +871,61 @@ mod tests {
             assert_eq!(byte, if i < hex_digit_sprite_length { &HEXADECIMAL_DIGIT_SPRITES[i] } else { &0 }, "RAM initialized incorrectly.");
         }
 
-        for byte in &interpreter.registers {
-            assert_eq!(byte, &0, "Registers initialized incorrectly.");
-        }
-
-        for address in &interpreter.stack {
-            assert_eq!(address, &0, "Stack initialized incorrectly.");
-        }
-
-        for address in &interpreter.drawing_buffer {
-            assert!(!address, "Drawing buffer initialized incorrectly.");
-        }
+        assert!(interpreter.registers.iter().eq([0; REGISTERS_SIZE].iter()), "Registers initialized incorrectly.");
+        assert!(interpreter.stack.iter().eq([0; STACK_SIZE].iter()), "Stack initialized incorrectly.");
+        assert!(interpreter.drawing_buffer.iter().eq([false; DRAWING_BUFFER_SIZE].iter()), "Drawing buffer initialized incorrectly.");
     }
 
     #[test]
     pub fn load_game() {
         let mut interpreter = Interpreter::new();
 
+        interpreter.is_running = false;
+        interpreter.registers[0x3] = 0xF;
+        interpreter.registers[0x9] = 0xAA;
+        interpreter.register_i = 0x732;
+        interpreter.delay_timer = 0x4;
+        interpreter.sound_timer = 0x7;
+        interpreter.stack_pointer = 0x2;
+        interpreter.stack[0x0] = 0x943;
+        interpreter.stack[0x1] = 0x239;
+        interpreter.keyboard.insert(0x3);
+        interpreter.keyboard.insert(0x6);
+        interpreter.should_wait_for_key = true;
+        interpreter.wait_for_key_register = 0x9;
+        interpreter.should_wait_for_display_refresh = true;
+        interpreter.wait_for_display_refresh_data = (10, 10, 2);
+        interpreter.drawing_buffer.fill(true);
+        interpreter.program_counter = 0x783;
+
         let fake_game_data = vec![0x23, 0x78, 0x93];
+        let fake_game_data_len = fake_game_data.len();
+        let program_start_address_usize = usize::from(PROGRAM_START_ADDRESS);
         interpreter.load_game(&fake_game_data);
         for (i, fake_game_element) in fake_game_data.iter().enumerate() {
             assert_eq!(interpreter.ram[PROGRAM_START_ADDRESS as usize + i], *fake_game_element, "Loaded game data does not match the original game data.");
         }
+
+        for (i, byte) in interpreter.ram.iter().enumerate() {
+            if (i > HEXADECIMAL_DIGIT_SPRITES_LENGTH && i < program_start_address_usize) || i > (program_start_address_usize + fake_game_data_len) {
+                assert_eq!(byte, &0, "Ram not reset after game load.");
+            }
+        }
+
+        assert!(interpreter.is_running, "Interpreter should be running.");
+        assert!(interpreter.registers.iter().eq([0; REGISTERS_SIZE].iter()), "Registers not reset after game load.");
+        assert_eq!(interpreter.register_i, 0x0, "Register I not reset after game load.");
+        assert_eq!(interpreter.delay_timer, 0x0, "Delay timer not reset after game load.");
+        assert_eq!(interpreter.sound_timer, 0x0, "Sound timer not reset after game load.");
+        assert_eq!(interpreter.stack_pointer, 0x0, "Stack pointer not reset after game load.");
+        assert!(interpreter.stack.iter().eq([0; STACK_SIZE].iter()), "Stack not reset after game load.");
+        assert!(interpreter.keyboard.is_empty(), "Keyboard not reset after game load.");
+        assert!(!interpreter.should_wait_for_key, "Waiting for key state not reset after game load.");
+        assert_eq!(interpreter.wait_for_key_register, 0, "Waiting for key register not reset after game load.");
+        assert!(!interpreter.should_wait_for_display_refresh, "Waiting for display refresh state not reset after game load.");
+        assert_eq!(interpreter.wait_for_display_refresh_data, (0x0, 0x0, 0x0), "Waiting for display refresh data not reset after game load.");
+        assert!(interpreter.drawing_buffer.iter().eq([false; DRAWING_BUFFER_SIZE].iter()), "Drawing buffer not reset after game load.");
+        assert_eq!(interpreter.program_counter, PROGRAM_START_ADDRESS, "Program counter not reset after game load.");
     }
 
     #[test]

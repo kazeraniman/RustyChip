@@ -1,9 +1,10 @@
 //! # `RustyChip`
 //!
-//! `rusty_chip` is an implementation of a CHIP-8 emulator written in Rust.  
+//! `rusty_chip` is an implementation of a CHIP-8 emulator written in Rust.
 //! It is a first project in Rust for the author and as such is primarily a learning experience.
 
 use std::{fs, io, time::Duration};
+use std::io::ErrorKind;
 
 use sdl2::{event::Event, keyboard::Keycode};
 use sdl2::audio::AudioSpecDesired;
@@ -23,7 +24,7 @@ pub mod quirks;
 ///
 /// # Parameters
 ///
-/// * `path` - The path to the chosen game.
+/// * `path` - An optional path to a chosen game.
 /// * `cycles_per_frame` - The number of instruction cycles to run in the emulator per frame (the emulator runs at 60 fps).
 /// * `quirk_config` - The enabled/disabled status of all the quirks.
 ///
@@ -32,11 +33,7 @@ pub mod quirks;
 /// Returns an `Err` if:
 /// * The game file cannot be found or read.
 /// * Any SDL system cannot be initialized.
-pub fn run(path: &str, cycles_per_frame: u32, quirk_config: QuirkConfig) -> Result<(), String> {
-    // Read the game file
-    let game_file = read_game_file(path)
-        .map_err(|err| err.to_string())?;
-
+pub fn run(path: &Option<String>, cycles_per_frame: u32, quirk_config: QuirkConfig) -> Result<(), String> {
     // Initialize SDL
     let sdl_context = sdl2::init()?;
     let video_subsystem = sdl_context.video()?;
@@ -75,7 +72,11 @@ pub fn run(path: &str, cycles_per_frame: u32, quirk_config: QuirkConfig) -> Resu
 
     // Prepare the emulator
     let mut interpreter = Interpreter::new_with_sdl(Some(&mut canvas), Some(&audio_device), quirk_config);
-    interpreter.load_game(&game_file);
+
+    // Read the game file
+    if let Some(path) = path {
+        load_game_file(&mut interpreter, path)?;
+    }
 
     // The main game loop
     'game_loop: loop {
@@ -91,6 +92,9 @@ pub fn run(path: &str, cycles_per_frame: u32, quirk_config: QuirkConfig) -> Resu
                 },
                 Event::KeyUp { keycode: Some(keycode), .. } => {
                     interpreter.handle_key_release(keycode);
+                },
+                Event::DropFile { filename, .. } => {
+                    load_game_file(&mut interpreter, &filename)?;
                 },
                 _ => {}
             }
@@ -112,12 +116,38 @@ pub fn run(path: &str, cycles_per_frame: u32, quirk_config: QuirkConfig) -> Resu
     Ok(())
 }
 
+/// Loads the game at the provided path into the emulator if possible, or an `Err` containing a `String` if the file could not be read.  
+/// If the file type is wrong (see [`read_game_file`](read_game_file)), then an error is logged and we continue as if nothing happened.
+/// 
+/// # Errors
+/// 
+/// Returns the forwarded `Err` from [`read_game_file`](read_game_file) if the file fails to be read.
+fn load_game_file(interpreter: &mut Interpreter, path: &str) -> Result<(), String> {
+    match read_game_file(path) {
+        Ok(game_data) => {
+            interpreter.load_game(&game_data);
+            Ok(())
+        },
+        Err(ref e) if e.kind() == ErrorKind::Unsupported => {
+            eprintln!("{e}");
+            Ok(())
+        },
+        Err(e) => Err(e.to_string())
+    }
+}
+
 /// Returns the byte contents of the provided game file, or an `io::Error` if the read fails.
 ///
 /// # Errors
 ///
 /// Returns an `Err` if the file fails to be read.
 fn read_game_file(path: &str) -> io::Result<Vec<u8>> {
+    if !std::path::Path::new(path)
+        .extension()
+        .map_or(false, |ext| ext.eq_ignore_ascii_case("ch8") || ext.eq_ignore_ascii_case("chip8")) {
+        return Err(io::Error::new(ErrorKind::Unsupported, format!("Invalid file found at {path}. Only CHIP-8 files (.ch8 or .chip8) are valid.")));
+    }
+
     fs::read(path)
 }
 
@@ -125,13 +155,43 @@ fn read_game_file(path: &str) -> io::Result<Vec<u8>> {
 mod tests {
     use super::*;
 
+    const EXISTING_GAME_PATH: &str = "games/15PUZZLE.chip8";
+    const NON_EXISTENT_GAME_PATH: &str = "games/FAKE.chip8";
+    const INVALID_GAME_PATH: &str = "README.md";
+
     #[test]
     fn read_existing_game_file() {
-        assert!(read_game_file("games/15PUZZLE.chip8").is_ok());
+        assert!(read_game_file(EXISTING_GAME_PATH).is_ok(), "Valid game file was not read.");
     }
 
     #[test]
-    fn read_non_existing_game_file() {
-        assert!(read_game_file("games/FAKE.chip8").is_err());
+    fn read_non_existent_game_file() {
+        assert_ne!(read_game_file(NON_EXISTENT_GAME_PATH).unwrap_err().kind(), ErrorKind::Unsupported, "Wrong error returned for non-existent game file.");
+    }
+
+    #[test]
+    fn read_invalid_game_file() {
+        assert_eq!(read_game_file(INVALID_GAME_PATH).unwrap_err().kind(), ErrorKind::Unsupported, "Wrong error returned for invalid game file.");
+    }
+
+    #[test]
+    fn load_existing_game_file() {
+        let mut interpreter = Interpreter::new();
+
+        assert!(load_game_file(&mut interpreter, EXISTING_GAME_PATH).is_ok(), "Valid game file was not loaded.");
+    }
+
+    #[test]
+    fn load_non_existent_game_file() {
+        let mut interpreter = Interpreter::new();
+
+        assert!(load_game_file(&mut interpreter, NON_EXISTENT_GAME_PATH).is_err(), "Non-existent game file was loaded successfully.");
+    }
+
+    #[test]
+    fn load_invalid_game_file() {
+        let mut interpreter = Interpreter::new();
+
+        assert!(load_game_file(&mut interpreter, INVALID_GAME_PATH).is_ok(), "Invalid game file error was not swallowed.");
     }
 }

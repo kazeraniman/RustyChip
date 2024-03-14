@@ -21,7 +21,8 @@ Please keep in mind that this will result in a Linux-style for the window.
 
 ## Running
 As expected, the standard `cargo` commands are all that's necessary. Run `cargo run -- --help` to get an idea of the options available. This is especially true due to all the quirk flags available. Please note that different games will work/not work depending on the quirk combinations. I have picked the default options based on the expectations in the testing suite. For more information on quirks, please see [the testing suite](#testing-suite) section.  
-The simplest structure is `cargo run -- <path to the game file>`.
+The simplest structure is `cargo run -- <path to the game file>`.  
+When the emulator is open, game files can be dragged onto the window in order to load them.
 
 ## Controls
 Aside from the actual game controls, you may close the window or press ESC to stop the emulator.

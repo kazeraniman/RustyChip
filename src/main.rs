@@ -11,7 +11,7 @@ const CYCLES_PER_FRAME: u32 = 10;
 #[command(version, about, long_about = None)]
 struct Cli {
     #[arg(long_help = "Path to the game file.")]
-    game: String,
+    game: Option<String>,
 
     #[arg(short, long, default_value_t = CYCLES_PER_FRAME, long_help = "The number of instructions that will run in a single frame.")]
     cycles_per_frame: u32,

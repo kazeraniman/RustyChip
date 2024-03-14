@@ -6,6 +6,7 @@ use std::collections::HashSet;
 use rand::random;
 use sdl2::audio::AudioDevice;
 use sdl2::keyboard::Keycode;
+use sdl2::messagebox::MessageBoxFlag;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use sdl2::render::WindowCanvas;
@@ -122,6 +123,24 @@ impl<'a> Interpreter<'a> {
         interpreter.is_running = true;
 
         interpreter
+    }
+
+    /// Displays a simple message box to the user.
+    /// 
+    /// # Parameters
+    /// 
+    /// * `flag` - A [`MessageBoxFlag`](MessageBoxFlag) to denote the type of message we are displaying.
+    /// * `title` - The title of the message box.
+    /// * `message` - The body of the message box.
+    /// 
+    /// # Errors
+    /// 
+    /// Returns an `Err` if the message box could not be shown.
+    pub fn show_simple_message_box(&self, flag: MessageBoxFlag, title: &str, message: &str) -> Result<(), String> {
+        match &self.canvas {
+            Some(canvas) => sdl2::messagebox::show_simple_message_box(flag, title, message, canvas.window()).map_err(|e| e.to_string()),
+            None => Ok(())
+        }
     }
 
     /// Loads the provided game into memory at the expected location.  

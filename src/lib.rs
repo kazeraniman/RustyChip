@@ -9,6 +9,7 @@ use std::io::ErrorKind;
 use rfd::FileDialog;
 use sdl2::{event::Event, keyboard::Keycode};
 use sdl2::audio::AudioSpecDesired;
+use sdl2::messagebox::MessageBoxFlag;
 
 use audio::SquareWave;
 use interpreter::Interpreter;
@@ -141,8 +142,9 @@ fn load_game_file(interpreter: &mut Interpreter, path: &str) -> Result<(), Strin
             Ok(())
         },
         Err(ref e) if e.kind() == ErrorKind::Unsupported => {
-            eprintln!("{e}");
-            Ok(())
+            let error_message = &format!("{e}");
+            eprintln!("{error_message}");
+            interpreter.show_simple_message_box(MessageBoxFlag::WARNING, "Unsupported File", error_message)
         },
         Err(e) => Err(e.to_string())
     }
